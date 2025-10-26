@@ -296,26 +296,27 @@
             </main>
 
             <nav id="app-nav" class="fixed bottom-0 left-0 right-0 w-full max-w-lg mx-auto h-16 bg-gray-800 border-t border-gray-700 flex justify-around items-center z-40">
-                <button data-view="home-section" class="nav-btn flex flex-col items-center justify-center text-indigo-400 w-1/4">
-                    <i class="fas fa-home text-xl"></i>
-                    <span class="text-xs font-medium">Home</span>
-                </button>
-                <button data-view="my-tournaments-section" class="nav-btn flex flex-col items-center justify-center text-gray-400 w-1/4">
-                    <i class="fas fa-trophy text-xl"></i>
-                    <span class="text-xs font-medium">My Fights</span>
-                </button>
-                <button data-view="wallet-section" class="nav-btn flex flex-col items-center justify-center text-gray-400 w-1/4">
-                    <i class="fas fa-wallet text-xl"></i>
-                    <span class="text-xs font-medium">Wallet</span>
-                </button>
-                <button data-view="profile-section" class="nav-btn flex flex-col items-center justify-center text-gray-400 w-1/4">
-                    <i class="fas fa-user text-xl"></i>
-                    <span class="text-xs font-medium">Profile</span>
-                </button>
-                <button id="admin-nav-btn" data-view="admin-dashboard-section" class="nav-btn flex-col items-center justify-center text-gray-400 w-1/4 hidden">
-                    <i class="fas fa-shield-halved text-xl"></i>
-                    <span class="text-xs font-medium">Admin</span>
-                </button>
+    <button data-view="home-section" class="nav-btn flex flex-col items-center justify-center text-indigo-400 w-1/4">
+        <i class="fas fa-home text-xl"></i>
+        <span class="text-xs font-medium">Home</span>
+    </button>
+    <button data-view="my-tournaments-section" class="nav-btn flex flex-col items-center justify-center text-gray-400 w-1/4">
+        <i class="fas fa-trophy text-xl"></i>
+        <span class="text-xs font-medium">My Fights</span>
+    </button>
+    <button data-view="wallet-section" class="nav-btn flex flex-col items-center justify-center text-gray-400 w-1/4">
+        <i class="fas fa-wallet text-xl"></i>
+        <span class="text-xs font-medium">Wallet</span>
+    </button>
+    <button data-view="profile-section" class="nav-btn flex flex-col items-center justify-center text-gray-400 w-1/4">
+        <i class="fas fa-user text-xl"></i>
+        <span class="text-xs font-medium">Profile</span>
+    </button>
+    <!-- Admin button: added the missing `flex` and a default width class so layout stays consistent when toggled -->
+    <button id="admin-nav-btn" data-view="admin-dashboard-section" class="nav-btn flex flex-col items-center justify-center text-gray-400 w-1/5 hidden">
+        <i class="fas fa-shield-halved text-xl"></i>
+        <span class="text-xs font-medium">Admin</span>
+    </button>
             </nav>
         </div>
     </div>
