@@ -29,6 +29,9 @@ export function initUserListeners(userId) {
     // Clear any old listeners
     clearUserListeners();
     
+    // Initialize a set of tournaments the user has joined for quick lookup
+    window.joinedTournamentIds = new Set();
+
     // 1. Wallet Balance Listener
     const userDocRef = doc(db, "users", userId);
     const unsubWallet = onSnapshot(userDocRef, (docSnap) => {
@@ -44,11 +47,30 @@ export function initUserListeners(userId) {
     // 2. Home Tournaments Listener
     const tourneysRef = collection(db, "tournaments");
     const qTourneys = query(tourneysRef, where("status", "==", "Upcoming"), orderBy("matchTime", "asc"));
-    const unsubTourneys = onSnapshot(qTourneys, (querySnapshot) => {
+    const unsubTourneys = onSnapshot(qTourneys, async (querySnapshot) => {
         const tournaments = [];
-        querySnapshot.forEach((doc) => {
-            tournaments.push({ id: doc.id, ...doc.data() });
+        const promises = [];
+
+        querySnapshot.forEach((docSnap) => {
+            const t = { id: docSnap.id, ...docSnap.data() };
+            tournaments.push(t);
         });
+
+        // For each tournament, fetch participant count (and ensure maxParticipants exists)
+        for (let t of tournaments) {
+            try {
+                const pQuery = query(collection(db, "participants"), where("tournamentId", "==", t.id));
+                const pSnap = await getDocs(pQuery);
+                t.participantCount = pSnap.size || 0;
+                // Ensure default maxParticipants if missing
+                t.maxParticipants = t.maxParticipants || 100;
+            } catch (err) {
+                console.error("Error fetching participant count for", t.id, err);
+                t.participantCount = 0;
+                t.maxParticipants = t.maxParticipants || 100;
+            }
+        }
+
         renderHomeTournaments(tournaments);
     }, (error) => {
         console.error("Error loading tournaments:", error);
@@ -76,6 +98,9 @@ export function initUserListeners(userId) {
         // Sort by match time (newest first)
         joinedTournaments.sort((a, b) => b.tournament.matchTime - a.tournament.matchTime);
         renderMyTournaments(joinedTournaments);
+
+        // Update the global set of joined tournament IDs for quick lookup in home UI
+        window.joinedTournamentIds = new Set(joinedTournaments.map(item => item.tournament.id));
     }, (error) => {
         console.error("Error loading my tournaments:", error);
         showToast("Could not load your tournaments.", true);
@@ -163,19 +188,24 @@ async function handleJoinTournament(tournamentId, entryFee) {
             const currentBalance = userDoc.data().walletBalance;
             if (currentBalance < entryFee) throw new Error("Insufficient Balance");
             
-            // 3. Get tournament doc (to check status)
+            // 3. Get tournament doc (to check status & capacity)
             const tDoc = await transaction.get(tournamentRef);
             if (!tDoc.exists()) throw new Error("Tournament not found.");
             if (tDoc.data().status !== 'Upcoming') throw new Error("Tournament is no longer available.");
 
-            // 4. Check if already joined (read-only, outside transaction if needed, but better here)
-            const participantQuery = query(collection(db, "participants"), where("userId", "==", userId), where("tournamentId", "==", tournamentId));
-            const participantSnap = await getDocs(participantQuery); // Note: Transactions can only read *after* writes
-            // This check is tricky in a transaction. Let's assume a security rule prevents duplicates.
-            // For client-side, we'll proceed and let the rule catch it, or check *before* starting the transaction.
-            
-            // Let's do a pre-check (safer for client)
-            if (!participantSnap.empty) {
+            // 4. Check participant count - read participants for this tournament
+            const participantSnap = await getDocs(query(collection(db, "participants"), where("tournamentId", "==", tournamentId)));
+            const currentCount = participantSnap.size || 0;
+            const maxParticipants = tDoc.data().maxParticipants || 100;
+
+            if (currentCount >= maxParticipants) {
+                throw new Error("Tournament is full.");
+            }
+
+            // 5. Check if already joined
+            const alreadyJoinedQuery = query(collection(db, "participants"), where("userId", "==", userId), where("tournamentId", "==", tournamentId));
+            const alreadyJoinedSnap = await getDocs(alreadyJoinedQuery);
+            if (!alreadyJoinedSnap.empty) {
                 throw new Error("You have already joined this tournament.");
             }
 
@@ -325,5 +355,4 @@ function initMyTournamentsTabs() {
             document.getElementById(`tab-content-${tab.dataset.tab}`).classList.remove('hidden');
         });
     });
-                                   }
-          
+}
