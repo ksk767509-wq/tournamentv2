@@ -44,43 +44,105 @@ export function showToast(message, isError = false) {
 }
 
 /**
+ * Returns Tailwind classes for occupancy bar color based on occupancy fraction (0..1).
+ * @param {number} frac 
+ */
+function occupancyColorClasses(frac) {
+    if (frac >= 1) {
+        // Full
+        return 'bg-red-500 ring-2 ring-red-500 animate-pulse';
+    } else if (frac >= 0.8) {
+        // Few slots left
+        return 'bg-orange-500';
+    } else if (frac >= 0.5) {
+        // Around half or more filled
+        return 'bg-yellow-400';
+    } else {
+        // Mostly empty
+        return 'bg-purple-500';
+    }
+}
+
+/**
  * Renders the list of upcoming tournaments on the Home screen.
  * @param {Array} tournaments - An array of tournament objects from Firestore.
+ * Expected tournament object: { id, title, gameName, matchTime, entryFee, prizePool, participantCount, maxParticipants, ... }
  */
 export function renderHomeTournaments(tournaments) {
     const listEl = document.getElementById('tournaments-list');
-    if (tournaments.length === 0) {
+    if (!tournaments || tournaments.length === 0) {
         listEl.innerHTML = '<p class="text-gray-400 text-center">No upcoming tournaments right now. Check back soon!</p>';
         return;
     }
     
     listEl.innerHTML = tournaments.map(t => {
-        const matchTime = t.matchTime.toDate ? t.matchTime.toDate().toLocaleString() : new Date(t.matchTime).toLocaleString();
-        return `
-        <div class="bg-gray-800 rounded-lg shadow-lg overflow-hidden">
-            <div class="p-5">
-                <h3 class="text-xl font-bold text-white mb-2">${t.title}</h3>
-                <p class="text-sm text-gray-400 mb-4">${t.gameName}</p>
-                <div class="flex justify-between items-center mb-4 text-sm">
-                    <span class="text-gray-300"><i class="fas fa-calendar-alt mr-1 text-indigo-400"></i> ${matchTime}</span>
-                    <span class="text-gray-300"><i class="fas fa-users mr-1 text-indigo-400"></i> 1/100</span>
-                </div>
-                <div class="flex justify-between items-center">
-                    <div>
-                        <p class="text-xs text-gray-400">Prize Pool</p>
-                        <p class="text-lg font-semibold text-green-400">₹${t.prizePool}</p>
-                    </div>
-                    <div>
-                        <p class="text-xs text-gray-400">Entry Fee</p>
-                        <p class="text-lg font-semibold text-white">₹${t.entryFee}</p>
-                    </div>
-                </div>
-            </div>
+        const matchTime = t.matchTime && t.matchTime.toDate ? t.matchTime.toDate().toLocaleString() : new Date(t.matchTime).toLocaleString();
+        const count = typeof t.participantCount === 'number' ? t.participantCount : 0;
+        const max = typeof t.maxParticipants === 'number' ? t.maxParticipants : (t.maxParticipants ? t.maxParticipants : 100);
+        const frac = max > 0 ? (count / max) : 0;
+        const pct = Math.round(Math.min(100, frac * 100));
+        const colorClasses = occupancyColorClasses(frac);
+
+        // Determine button state
+        const isFull = count >= max;
+        const joinedSet = window.joinedTournamentIds || new Set();
+        const isJoined = joinedSet.has(t.id);
+
+        // Button HTML variations:
+        let buttonHtml = `
             <button class="join-btn w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 transition duration-200"
                     data-id="${t.id}" 
                     data-fee="${t.entryFee}">
                 Join Now
             </button>
+        `;
+
+        if (isFull) {
+            buttonHtml = `
+            <button disabled class="w-full bg-red-600 text-white font-bold py-3 rounded transition duration-200 cursor-not-allowed">
+                Full
+            </button>
+            `;
+        } else if (isJoined) {
+            buttonHtml = `
+            <button disabled class="w-full bg-yellow-400 text-black font-bold py-3 rounded transition duration-200 cursor-default">
+                Joined
+            </button>
+            `;
+        }
+
+        // Occupancy squaricle box: thin rounded bar with inner width showing occupancy.
+        const innerWidth = `${pct}%`;
+
+        return `
+        <div class="bg-gray-800 rounded-lg shadow-lg overflow-hidden">
+            <div class="p-5">
+                <div class="flex items-start justify-between">
+                    <div>
+                        <h3 class="text-xl font-bold text-white mb-2">${t.title}</h3>
+                        <p class="text-sm text-gray-400 mb-4">${t.gameName}</p>
+                    </div>
+                    <div class="text-right">
+                        <p class="text-xs text-gray-300"><i class="fas fa-calendar-alt mr-1 text-indigo-400"></i> ${matchTime}</p>
+                        <p class="text-sm text-gray-400 mt-2">${count}/${max}</p>
+                    </div>
+                </div>
+
+                <div class="flex items-center gap-4 my-4">
+                    <div class="flex-1">
+                        <div class="w-full h-3 bg-gray-700 rounded squaricle overflow-hidden">
+                            <div class="${colorClasses} h-full" style="width: ${innerWidth}; transition: width 400ms ease;"></div>
+                        </div>
+                        <div class="text-xs text-gray-400 mt-1">${pct}% filled</div>
+                    </div>
+                    <div class="w-36 text-right">
+                        <p class="text-xs text-gray-400">Prize Pool</p>
+                        <p class="text-lg font-semibold text-green-400">₹${t.prizePool}</p>
+                        <p class="text-xs text-gray-400 mt-1">Entry ₹${t.entryFee}</p>
+                    </div>
+                </div>
+            </div>
+            ${buttonHtml}
         </div>
         `;
     }).join('');
@@ -98,7 +160,7 @@ export function renderMyTournaments(joinedTournaments) {
     const completedHtml = [];
     
     if (joinedTournaments.length === 0) {
-        liveList.innerHTML = '<p class="text-gray-400 text-center">You haven\'t joined any tournaments yet.</p>';
+        liveList.innerHTML = '<p class="text-gray-400 text-center">You haven\\'t joined any tournaments yet.</p>';
         completedList.innerHTML = '<p class="text-gray-400 text-center">No completed tournaments.</p>';
         return;
     }
