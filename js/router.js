@@ -48,18 +48,42 @@ function updateNavActiveState(activeViewId) {
 
 /**
  * Initializes the router logic, attaching listeners to nav buttons.
+ * Uses per-button listeners with pointer events to improve responsiveness on touch devices.
  */
 export function initRouter() {
-    const navContainer = document.getElementById('app-nav');
-    navContainer.addEventListener('click', (e) => {
-        const navButton = e.target.closest('.nav-btn');
-        if (navButton && navButton.dataset.view) {
-            navigateTo(navButton.dataset.view);
+    // Attach reliable event listeners to each nav button (better than delegated click for touch responsiveness)
+    const navButtons = document.querySelectorAll('.nav-btn');
+    navButtons.forEach(btn => {
+        // Pointer events work across mouse/touch/stylus
+        btn.addEventListener('pointerup', (e) => {
+            // Only respond to primary button
+            if (e.button && e.button !== 0) return;
+            const view = btn.dataset.view;
+            if (view) navigateTo(view);
+        });
+
+        // Keyboard accessibility (Enter / Space)
+        btn.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                const view = btn.dataset.view;
+                if (view) navigateTo(view);
+            }
+        });
+
+        // Ensure the button is focusable for keyboard users
+        if (!btn.hasAttribute('tabindex')) {
+            btn.setAttribute('tabindex', '0');
         }
     });
 
-    // Admin nav buttons
-    document.getElementById('go-to-create-tournament-btn').addEventListener('click', () => navigateTo('tournament-section'));
-    document.getElementById('back-to-admin-dash-btn').addEventListener('click', () => navigateTo('admin-dashboard-section'));
-    document.getElementById('back-to-admin-dash-btn-2').addEventListener('click', () => navigateTo('admin-dashboard-section'));
+    // Admin nav buttons and other special buttons (unchanged behavior)
+    const createBtn = document.getElementById('go-to-create-tournament-btn');
+    if (createBtn) createBtn.addEventListener('click', () => navigateTo('tournament-section'));
+
+    const backBtn = document.getElementById('back-to-admin-dash-btn');
+    if (backBtn) backBtn.addEventListener('click', () => navigateTo('admin-dashboard-section'));
+
+    const backBtn2 = document.getElementById('back-to-admin-dash-btn-2');
+    if (backBtn2) backBtn2.addEventListener('click', () => navigateTo('admin-dashboard-section'));
 }
