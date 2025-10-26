@@ -40,18 +40,32 @@ export function initAuthListener() {
                     initUserUI(window.currentUser);
                     initUserListeners(user.uid);
 
-                    // Check for admin
+                    // Check for admin and adjust nav layout properly
                     const adminNav = document.getElementById('admin-nav-btn');
-                    const nav = document.getElementById('app-nav');
+
+                    // Helper to set each nav button's width class based on admin presence
+                    function setNavWidths(isAdmin) {
+                        const navButtons = document.querySelectorAll('.nav-btn');
+                        navButtons.forEach(btn => {
+                            // remove any previous width classes we use
+                            btn.classList.remove('w-1/4', 'w-1/5');
+                            if (isAdmin) {
+                                btn.classList.add('w-1/5');
+                            } else {
+                                btn.classList.add('w-1/4');
+                            }
+                        });
+                    }
+
                     if (window.currentUser.isAdmin) {
                         adminNav.classList.remove('hidden');
                         adminNav.classList.add('flex');
-                        nav.classList.add('w-1/5'); // Adjust nav item width
+                        setNavWidths(true);
                         initAdminListeners();
                     } else {
                         adminNav.classList.add('hidden');
                         adminNav.classList.remove('flex');
-                        nav.classList.remove('w-1/5');
+                        setNavWidths(false);
                         clearAdminListeners();
                     }
 
