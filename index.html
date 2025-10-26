@@ -53,6 +53,11 @@
             transform: translateY(0);
             opacity: 1;
         }
+
+        /* Small helper for squaricle occupancy box (if you want custom tweak) */
+        .squaricle {
+            border-radius: 0.5rem;
+        }
     </style>
 </head>
 <body class="bg-gray-900 text-gray-200 font-sans antialiased">
@@ -258,6 +263,8 @@
                         <input type="number" id="t-entry-fee" placeholder="Entry Fee (e.g., 50)" required class="w-full bg-gray-700 p-3 rounded-lg">
                         <input type="number" id="t-prize-pool" placeholder="Prize Pool (e.g., 800)" required class="w-full bg-gray-700 p-3 rounded-lg">
                         <input type="number" id="t-commission" placeholder="Commission % (e.g., 20)" required class="w-full bg-gray-700 p-3 rounded-lg">
+                        <!-- NEW: Max participants input -->
+                        <input type="number" id="t-max-participants" placeholder="Max Participants (e.g., 100)" required min="2" class="w-full bg-gray-700 p-3 rounded-lg">
                         <button type="submit" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-lg">
                             Create Tournament
                         </button>
@@ -296,27 +303,26 @@
             </main>
 
             <nav id="app-nav" class="fixed bottom-0 left-0 right-0 w-full max-w-lg mx-auto h-16 bg-gray-800 border-t border-gray-700 flex justify-around items-center z-40">
-    <button data-view="home-section" class="nav-btn flex flex-col items-center justify-center text-indigo-400 w-1/4">
-        <i class="fas fa-home text-xl"></i>
-        <span class="text-xs font-medium">Home</span>
-    </button>
-    <button data-view="my-tournaments-section" class="nav-btn flex flex-col items-center justify-center text-gray-400 w-1/4">
-        <i class="fas fa-trophy text-xl"></i>
-        <span class="text-xs font-medium">My Fights</span>
-    </button>
-    <button data-view="wallet-section" class="nav-btn flex flex-col items-center justify-center text-gray-400 w-1/4">
-        <i class="fas fa-wallet text-xl"></i>
-        <span class="text-xs font-medium">Wallet</span>
-    </button>
-    <button data-view="profile-section" class="nav-btn flex flex-col items-center justify-center text-gray-400 w-1/4">
-        <i class="fas fa-user text-xl"></i>
-        <span class="text-xs font-medium">Profile</span>
-    </button>
-    <!-- Admin button: added the missing `flex` and a default width class so layout stays consistent when toggled -->
-    <button id="admin-nav-btn" data-view="admin-dashboard-section" class="nav-btn flex flex-col items-center justify-center text-gray-400 w-1/5 hidden">
-        <i class="fas fa-shield-halved text-xl"></i>
-        <span class="text-xs font-medium">Admin</span>
-    </button>
+                <button data-view="home-section" class="nav-btn flex flex-col items-center justify-center text-indigo-400 w-1/4">
+                    <i class="fas fa-home text-xl"></i>
+                    <span class="text-xs font-medium">Home</span>
+                </button>
+                  <button data-view="my-tournaments-section" class="nav-btn flex flex-col items-center justify-center text-gray-400 w-1/4">
+                    <i class="fas fa-trophy text-xl"></i>
+                    <span class="text-xs font-medium">My Fights</span>
+                </button>
+                <button data-view="wallet-section" class="nav-btn flex flex-col items-center justify-center text-gray-400 w-1/4">
+                    <i class="fas fa-wallet text-xl"></i>
+                    <span class="text-xs font-medium">Wallet</span>
+                </button>
+                <button data-view="profile-section" class="nav-btn flex flex-col items-center justify-center text-gray-400 w-1/4">
+                    <i class="fas fa-user text-xl"></i>
+                    <span class="text-xs font-medium">Profile</span>
+                </button>
+                <button id="admin-nav-btn" data-view="admin-dashboard-section" class="nav-btn flex flex-col items-center justify-center text-gray-400 w-1/5 hidden">
+                    <i class="fas fa-shield-halved text-xl"></i>
+                    <span class="text-xs font-medium">Admin</span>
+                </button>
             </nav>
         </div>
     </div>
@@ -338,4 +344,3 @@
     <script type="module" src="js/main.js"></script>
 </body>
 </html>
-    
