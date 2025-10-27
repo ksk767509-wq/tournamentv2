@@ -21,6 +21,11 @@ import { handleChangePassword } from "./auth.js";
 // To store unsubscribe functions for real-time listeners
 let listeners = [];
 
+// Cache latest tournaments snapshot for coordinated rendering
+let latestTournaments = [];
+// Set of tournamentIds that current user has joined
+let joinedTournamentIds = new Set();
+
 /**
  * Initializes all user-specific listeners when they log in.
  * @param {string} userId - The current user's UID.
@@ -29,9 +34,10 @@ export function initUserListeners(userId) {
     // Clear any old listeners
     clearUserListeners();
     
-    // Initialize a set of tournaments the user has joined for quick lookup
-    window.joinedTournamentIds = new Set();
-
+    // Reset caches
+    latestTournaments = [];
+    joinedTournamentIds = new Set();
+    
     // 1. Wallet Balance Listener
     const userDocRef = doc(db, "users", userId);
     const unsubWallet = onSnapshot(userDocRef, (docSnap) => {
@@ -44,47 +50,34 @@ export function initUserListeners(userId) {
         }
     });
     
-    // 2. Home Tournaments Listener
+    // 2. Home Tournaments Listener (listens to tournaments docs and uses fields currentParticipants/maxParticipants)
     const tourneysRef = collection(db, "tournaments");
     const qTourneys = query(tourneysRef, where("status", "==", "Upcoming"), orderBy("matchTime", "asc"));
-    const unsubTourneys = onSnapshot(qTourneys, async (querySnapshot) => {
+    const unsubTourneys = onSnapshot(qTourneys, (querySnapshot) => {
         const tournaments = [];
-        const promises = [];
-
-        querySnapshot.forEach((docSnap) => {
-            const t = { id: docSnap.id, ...docSnap.data() };
-            tournaments.push(t);
+        querySnapshot.forEach((doc) => {
+            tournaments.push({ id: doc.id, ...doc.data() });
         });
-
-        // For each tournament, fetch participant count (and ensure maxParticipants exists)
-        for (let t of tournaments) {
-            try {
-                const pQuery = query(collection(db, "participants"), where("tournamentId", "==", t.id));
-                const pSnap = await getDocs(pQuery);
-                t.participantCount = pSnap.size || 0;
-                // Ensure default maxParticipants if missing
-                t.maxParticipants = t.maxParticipants || 100;
-            } catch (err) {
-                console.error("Error fetching participant count for", t.id, err);
-                t.participantCount = 0;
-                t.maxParticipants = t.maxParticipants || 100;
-            }
-        }
-
-        renderHomeTournaments(tournaments);
+        // Update cache and trigger render with joined set
+        latestTournaments = tournaments;
+        renderHomeTournaments(latestTournaments, joinedTournamentIds);
     }, (error) => {
         console.error("Error loading tournaments:", error);
         showToast("Could not load tournaments.", true);
     });
 
-    // 3. My Tournaments Listener
+    // 3. My Tournaments Listener (participants for current user)
     const participantsRef = collection(db, "participants");
     const qMyTournaments = query(participantsRef, where("userId", "==", userId));
     const unsubMyTournaments = onSnapshot(qMyTournaments, async (querySnapshot) => {
         const joinedTournaments = [];
         const promises = [];
+        // Reset joined set
+        joinedTournamentIds = new Set();
         querySnapshot.forEach((pDoc) => {
             const participant = { id: pDoc.id, ...pDoc.data() };
+            // Track joined tournament ids
+            if (participant.tournamentId) joinedTournamentIds.add(participant.tournamentId);
             const tDocRef = doc(db, "tournaments", participant.tournamentId);
             promises.push(
                 getDoc(tDocRef).then((tDoc) => {
@@ -99,8 +92,8 @@ export function initUserListeners(userId) {
         joinedTournaments.sort((a, b) => b.tournament.matchTime - a.tournament.matchTime);
         renderMyTournaments(joinedTournaments);
 
-        // Update the global set of joined tournament IDs for quick lookup in home UI
-        window.joinedTournamentIds = new Set(joinedTournaments.map(item => item.tournament.id));
+        // After updating joined set, re-render home tournaments (to reflect Joined / Full states)
+        renderHomeTournaments(latestTournaments, joinedTournamentIds);
     }, (error) => {
         console.error("Error loading my tournaments:", error);
         showToast("Could not load your tournaments.", true);
@@ -154,7 +147,7 @@ export function initUserUI(userData) {
 function initJoinButtonListener() {
     document.getElementById('tournaments-list').addEventListener('click', (e) => {
         const joinButton = e.target.closest('.join-btn');
-        if (joinButton) {
+        if (joinButton && !joinButton.disabled) {
             const tId = joinButton.dataset.id;
             const fee = parseFloat(joinButton.dataset.fee);
             if (confirm(`Join this tournament for ₹${fee}?`)) {
@@ -166,7 +159,7 @@ function initJoinButtonListener() {
 
 /**
  * Handles the logic for a user joining a tournament.
- * Uses a Firestore Transaction for safety.
+ * Uses a Firestore Transaction for safety and increments currentParticipants on tournament doc.
  * @param {string} tournamentId 
  * @param {number} entryFee 
  */
@@ -174,7 +167,7 @@ async function handleJoinTournament(tournamentId, entryFee) {
     showLoader();
     const userId = auth.currentUser.uid;
     const userRef = doc(db, "users", userId);
-    const participantRef = doc(collection(db, "participants")); // New doc
+    const participantRef = doc(collection(db, "participants")); // New doc (DocRef)
     const transactionRef = doc(collection(db, "transactions")); // New doc
     const tournamentRef = doc(db, "tournaments", tournamentId);
 
@@ -188,32 +181,29 @@ async function handleJoinTournament(tournamentId, entryFee) {
             const currentBalance = userDoc.data().walletBalance;
             if (currentBalance < entryFee) throw new Error("Insufficient Balance");
             
-            // 3. Get tournament doc (to check status & capacity)
+            // 3. Get tournament doc (to check status and participant limits)
             const tDoc = await transaction.get(tournamentRef);
             if (!tDoc.exists()) throw new Error("Tournament not found.");
-            if (tDoc.data().status !== 'Upcoming') throw new Error("Tournament is no longer available.");
+            const tData = tDoc.data();
+            if (tData.status !== 'Upcoming') throw new Error("Tournament is no longer available.");
 
-            // 4. Check participant count - read participants for this tournament
-            const participantSnap = await getDocs(query(collection(db, "participants"), where("tournamentId", "==", tournamentId)));
-            const currentCount = participantSnap.size || 0;
-            const maxParticipants = tDoc.data().maxParticipants || 100;
+            const max = tData.maxParticipants || 100;
+            const current = typeof tData.currentParticipants === 'number' ? tData.currentParticipants : 0;
+            if (current >= max) throw new Error("Tournament is already full.");
 
-            if (currentCount >= maxParticipants) {
-                throw new Error("Tournament is full.");
-            }
-
-            // 5. Check if already joined
-            const alreadyJoinedQuery = query(collection(db, "participants"), where("userId", "==", userId), where("tournamentId", "==", tournamentId));
-            const alreadyJoinedSnap = await getDocs(alreadyJoinedQuery);
-            if (!alreadyJoinedSnap.empty) {
+            // 4. Check if already joined (pre-check outside transaction would be ideal; do a quick read)
+            // We'll do a doc query - this is not inside transaction, but it's okay because the counter protects us.
+            const participantQuery = query(collection(db, "participants"), where("userId", "==", userId), where("tournamentId", "==", tournamentId));
+            const existing = await getDocs(participantQuery);
+            if (!existing.empty) {
                 throw new Error("You have already joined this tournament.");
             }
 
-            // All checks passed, perform writes
-            // 1. Debit user wallet
+            // All checks passed, perform writes atomically:
+            // - Update user wallet
             transaction.update(userRef, { walletBalance: currentBalance - entryFee });
             
-            // 2. Create participant doc
+            // - Create participant doc
             transaction.set(participantRef, {
                 userId: userId,
                 username: userDoc.data().username,
@@ -222,14 +212,17 @@ async function handleJoinTournament(tournamentId, entryFee) {
                 joinedAt: serverTimestamp()
             });
             
-            // 3. Create transaction doc
+            // - Create transaction doc
             transaction.set(transactionRef, {
                 userId: userId,
                 amount: entryFee,
                 type: 'debit',
-                description: `Entry fee for ${tDoc.data().title}`,
+                description: `Entry fee for ${tData.title}`,
                 createdAt: serverTimestamp()
             });
+
+            // - Increment tournament's currentParticipants by 1
+            transaction.update(tournamentRef, { currentParticipants: (current + 1) });
         });
 
         showToast("Joined tournament successfully!", false);
