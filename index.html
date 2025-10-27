@@ -53,11 +53,6 @@
             transform: translateY(0);
             opacity: 1;
         }
-
-        /* Small helper for squaricle occupancy box (if you want custom tweak) */
-        .squaricle {
-            border-radius: 0.5rem;
-        }
     </style>
 </head>
 <body class="bg-gray-900 text-gray-200 font-sans antialiased">
@@ -263,7 +258,7 @@
                         <input type="number" id="t-entry-fee" placeholder="Entry Fee (e.g., 50)" required class="w-full bg-gray-700 p-3 rounded-lg">
                         <input type="number" id="t-prize-pool" placeholder="Prize Pool (e.g., 800)" required class="w-full bg-gray-700 p-3 rounded-lg">
                         <input type="number" id="t-commission" placeholder="Commission % (e.g., 20)" required class="w-full bg-gray-700 p-3 rounded-lg">
-                        <!-- NEW: Max participants input -->
+                        <!-- New field: Max Participants -->
                         <input type="number" id="t-max-participants" placeholder="Max Participants (e.g., 100)" required min="2" class="w-full bg-gray-700 p-3 rounded-lg">
                         <button type="submit" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-lg">
                             Create Tournament
@@ -307,11 +302,11 @@
                     <i class="fas fa-home text-xl"></i>
                     <span class="text-xs font-medium">Home</span>
                 </button>
-                  <button data-view="my-tournaments-section" class="nav-btn flex flex-col items-center justify-center text-gray-400 w-1/4">
+                <button data-view="my-tournaments-section" class="nav-btn flex flex-col items-center justify-center text-gray-400 w-1/4">
                     <i class="fas fa-trophy text-xl"></i>
                     <span class="text-xs font-medium">My Fights</span>
                 </button>
-                <button data-view="wallet-section" class="nav-btn flex flex-col items-center justify-center text-gray-400 w-1/4">
+                      <button data-view="wallet-section" class="nav-btn flex flex-col items-center justify-center text-gray-400 w-1/4">
                     <i class="fas fa-wallet text-xl"></i>
                     <span class="text-xs font-medium">Wallet</span>
                 </button>
