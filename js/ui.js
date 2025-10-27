@@ -50,6 +50,8 @@ export function showToast(message, isError = false) {
  *  - id, title, gameName, matchTime, entryFee, prizePool
  *  - maxParticipants (number)
  *  - currentParticipants (number)
+ *  - gameMode ('solo'|'duo'|'squad')
+ *  - perKillEnabled, perKillPrize
  */
 export function renderHomeTournaments(tournaments, joinedSet = new Set()) {
     const listEl = document.getElementById('tournaments-list');
@@ -94,6 +96,13 @@ export function renderHomeTournaments(tournaments, joinedSet = new Set()) {
             joinBtnClass = 'bg-yellow-400 text-white';
         }
 
+        // Mode label
+        const modeLabel = (t.gameMode || 'solo').toLowerCase();
+        const modeDisplay = modeLabel === 'duo' ? 'Duo' : (modeLabel === 'squad' ? 'Squad' : 'Solo');
+
+        // Per-kill label
+        const perKillHtml = t.perKillEnabled ? `<span class="per-kill-label ml-2">Per Kill: ₹${t.perKillPrize || 0}</span>` : '';
+
         // Progress bar markup (thin squaricle box at top of card)
         const progressBar = `
             <div class="w-full h-1 rounded-t-lg bg-gray-700 overflow-hidden">
@@ -105,13 +114,18 @@ export function renderHomeTournaments(tournaments, joinedSet = new Set()) {
         <div class="bg-gray-800 rounded-lg shadow-lg overflow-hidden">
             ${progressBar}
             <div class="p-5">
-                <h3 class="text-xl font-bold text-white mb-2">${t.title}</h3>
-                <p class="text-sm text-gray-400 mb-4">${t.gameName}</p>
-                <div class="flex justify-between items-center mb-4 text-sm">
-                    <span class="text-gray-300"><i class="fas fa-calendar-alt mr-1 text-indigo-400"></i> ${matchTime}</span>
-                    <span class="text-gray-300"><i class="fas fa-users mr-1 text-indigo-400"></i> ${current}/${max}</span>
+                <div class="flex justify-between items-start mb-2">
+                    <div>
+                        <h3 class="text-xl font-bold text-white mb-1">${t.title}</h3>
+                        <p class="text-sm text-gray-400">${t.gameName} • <span class="text-sm text-gray-300">${modeDisplay}</span> ${perKillHtml}</p>
+                    </div>
+                    <div class="text-right">
+                        <p class="text-xs text-gray-400">${matchTime}</p>
+                        <p class="text-xs text-gray-400 mt-2"><i class="fas fa-users text-indigo-400 mr-1"></i>${current}/${max}</p>
+                    </div>
                 </div>
-                <div class="flex justify-between items-center">
+
+                <div class="flex justify-between items-center mt-3">
                     <div>
                         <p class="text-xs text-gray-400">Prize Pool</p>
                         <p class="text-lg font-semibold text-green-400">₹${t.prizePool}</p>
@@ -125,6 +139,7 @@ export function renderHomeTournaments(tournaments, joinedSet = new Set()) {
             <button class="join-btn w-full ${joinBtnClass} font-bold py-3 transition duration-200 ${joinBtnDisabled ? 'pointer-events-none' : ''}"
                     data-id="${t.id}" 
                     data-fee="${t.entryFee}"
+                    data-mode="${(t.gameMode || 'solo')}"
                     ${joinBtnDisabled ? 'disabled' : ''}>
                 ${joinBtnText}
             </button>
@@ -203,67 +218,6 @@ export function renderMyTournaments(joinedTournaments) {
     
     liveList.innerHTML = liveHtml.length > 0 ? liveHtml.join('') : '<p class="text-gray-400 text-center">No live or upcoming tournaments joined.</p>';
     completedList.innerHTML = completedHtml.length > 0 ? completedHtml.join('') : '<p class="text-gray-400 text-center">No completed tournaments.</p>';
-}
-
-/**
- * Renders the declare-winner / distribute-prize form for the admin manage view.
- * - If tournament.perKillEnabled === true -> shows inputs for kills per participant and a disabled "Distribute Prize" button which becomes enabled when all inputs are filled.
- * - If perKillEnabled === false -> shows the old select-based winner declaration UI.
- *
- * @param {Array} participants - array of participant objects { id, userId, username, ... }
- * @param {Object} tournament - tournament doc data (must include id, title, perKillEnabled, perKillPrize)
- */
-export function renderDeclareWinnerForm(participants, tournament) {
-    const formEl = document.getElementById('declare-winner-form');
-    if (!formEl) return;
-
-    // Clear any previous content
-    formEl.innerHTML = '';
-
-    // Header
-    const titleHtml = `<h3 class="text-lg font-semibold text-white">${tournament.perKillEnabled ? 'Enter Kills & Distribute Per-Kill Prizes' : 'Declare Winner'}</h3>`;
-    let bodyHtml = titleHtml;
-
-    if (tournament.perKillEnabled) {
-        // Per-kill mode: show all participants with kills input
-        bodyHtml += `
-            <p class="text-sm text-gray-400 mb-2">Per Kill Prize: ₹${tournament.perKillPrize || 0}</p>
-            <div id="per-kill-participants" class="space-y-2 max-h-64 overflow-y-auto mb-3">
-                ${participants.map(p => `
-                    <div class="bg-gray-700 p-3 rounded flex items-center justify-between">
-                        <div class="flex items-center gap-3">
-                            <div class="h-8 w-8 rounded-full bg-gray-600 flex items-center justify-center text-sm text-white">${(p.username || 'U').charAt(0).toUpperCase()}</div>
-                            <div>
-                                <div class="text-white font-medium">${p.username}</div>
-                                <div class="text-xs text-gray-400">UserID: ${p.userId}</div>
-                            </div>
-                        </div>
-                        <div class="flex items-center gap-2">
-                            <label class="text-xs text-gray-400">Kills</label>
-                            <input type="number" min="0" value="${p.kills || 0}" data-participant-id="${p.id}" class="kill-input w-20 bg-gray-600 p-2 rounded text-white text-sm" />
-                        </div>
-                    </div>
-                `).join('')}
-            </div>
-            <div>
-                <button id="distribute-per-kill-btn" type="submit" class="w-full bg-indigo-600 disabled:opacity-60 disabled:cursor-not-allowed text-white font-bold py-3 rounded" disabled>
-                    Distribute Prize
-                </button>
-            </div>
-        `;
-    } else {
-        // Normal mode: show select dropdown and a button
-        bodyHtml += `
-            <label for="participant-winner-select" class="block text-sm font-medium text-gray-300 mb-1">Select Winner</label>
-            <select id="participant-winner-select" class="w-full bg-gray-700 p-3 rounded-lg mb-3">
-                <option value="">Select a winner...</option>
-                ${participants.map(p => `<option value="${p.userId}" data-participant-id="${p.id}">${p.username}</option>`).join('')}
-            </select>
-            <div><button id="declare-winner-btn" type="submit" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded">Declare Winner & Distribute Prize</button></div>
-        `;
-    }
-
-    formEl.innerHTML = `<div class="p-2">${bodyHtml}</div>`;
 }
 
 /**
