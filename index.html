@@ -53,6 +53,34 @@
             transform: translateY(0);
             opacity: 1;
         }
+
+        /* Nav dot base style */
+        .nav-dot {
+            position: absolute;
+            top: 6px;
+            right: 18px;
+            height: 10px;
+            width: 10px;
+            border-radius: 9999px;
+            box-shadow: 0 0 0 3px transparent;
+            transition: transform 150ms ease, opacity 150ms ease;
+            opacity: 0;
+            pointer-events: none;
+        }
+        .nav-dot.show { opacity: 1; }
+        .nav-dot.yellow { background-color: #f59e0b; } /* yellow-500 */
+        .nav-dot.red { background-color: #ef4444; }    /* red-500 */
+        .nav-dot.green { background-color: #10b981; }  /* green-500 */
+        .nav-dot.glow { box-shadow: 0 0 8px rgba(255,0,0,0.5); transform: scale(1.15); }
+
+        /* Small copy buttons in cards */
+        .copy-btn {
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            padding: 4px;
+            margin-left: 8px;
+        }
     </style>
 </head>
 <body class="bg-gray-900 text-gray-200 font-sans antialiased">
@@ -290,7 +318,7 @@
                         </button>
                     </form>
 
-                    <h3 class="text-xl font-semibold text-white mt-6 mb-3">Participants</h3>
+                     <h3 class="text-xl font-semibold text-white mt-6 mb-3">Participants</h3>
                     <div id="manage-t-participants-list" class="space-y-2">
                         </div>
                 </section>
@@ -302,11 +330,13 @@
                     <i class="fas fa-home text-xl"></i>
                     <span class="text-xs font-medium">Home</span>
                 </button>
-                <button data-view="my-tournaments-section" class="nav-btn flex flex-col items-center justify-center text-gray-400 w-1/4">
+                <button data-view="my-tournaments-section" class="nav-btn relative flex flex-col items-center justify-center text-gray-400 w-1/4" id="my-fights-nav-btn">
                     <i class="fas fa-trophy text-xl"></i>
                     <span class="text-xs font-medium">My Fights</span>
+                    <!-- Notification dot (will be toggled via JS). -->
+                    <span id="my-fights-dot" class="nav-dot"></span>
                 </button>
-                      <button data-view="wallet-section" class="nav-btn flex flex-col items-center justify-center text-gray-400 w-1/4">
+                <button data-view="wallet-section" class="nav-btn flex flex-col items-center justify-center text-gray-400 w-1/4">
                     <i class="fas fa-wallet text-xl"></i>
                     <span class="text-xs font-medium">Wallet</span>
                 </button>
