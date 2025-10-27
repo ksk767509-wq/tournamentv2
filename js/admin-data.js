@@ -122,11 +122,6 @@ async function handleCreateTournament(e) {
     showLoader();
     
     try {
-        const maxParticipants = parseInt(document.getElementById('t-max-participants').value, 10);
-        if (isNaN(maxParticipants) || maxParticipants < 2) {
-            throw new Error("Max participants must be a number >= 2.");
-        }
-
         const formData = {
             title: document.getElementById('t-title').value,
             gameName: document.getElementById('t-game-name').value,
@@ -137,7 +132,9 @@ async function handleCreateTournament(e) {
             status: 'Upcoming',
             roomId: '',
             roomPassword: '',
-            maxParticipants: maxParticipants,
+            // NEW: participant limits
+            maxParticipants: parseInt(document.getElementById('t-max-participants').value, 10) || 100,
+            currentParticipants: 0,
             createdAt: serverTimestamp()
         };
         
