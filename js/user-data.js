@@ -28,6 +28,9 @@ let joinedTournamentIds = new Set();
 // Cache latest joinedTournaments (array of { participant, tournament })
 let latestJoinedTournaments = [];
 
+// Ensure we attach global delegated handlers only once
+let handlersAttached = false;
+
 /**
  * Initializes all user-specific listeners when they log in.
  * @param {string} userId - The current user's UID.
@@ -124,6 +127,12 @@ export function initUserListeners(userId) {
 
     // Store all unsubscribe functions
     listeners = [unsubWallet, unsubTourneys, unsubMyTournaments, unsubTransactions];
+
+    // Attach delegated handlers once
+    if (!handlersAttached) {
+        attachDelegatedHandlers();
+        handlersAttached = true;
+    }
 }
 
 /**
@@ -144,66 +153,79 @@ export function initUserUI(userData) {
     document.getElementById('profile-email').value = userData.email;
 
     // Attach listeners
-    initTournamentsListHandlers();
     initWalletButtons();
     initProfileForms();
     initMyTournamentsTabs();
 }
 
 /**
- * Adds event delegation to the tournaments list for join, copy, and OK buttons.
+ * Attach a single delegated click handler to the document body to handle:
+ * - .join-btn (home)
+ * - .copy-btn (room id/password copy in My Tournaments)
+ * - .ok-btn (mark seen in completed)
+ *
+ * Using a single delegated handler avoids missing buttons placed in different containers.
  */
-function initTournamentsListHandlers() {
-    const list = document.getElementById('tournaments-list');
-    if (list) {
-        list.addEventListener('click', (e) => {
-            // Join button
-            const joinButton = e.target.closest('.join-btn');
-            if (joinButton && !joinButton.disabled) {
-                const tId = joinButton.dataset.id;
-                const fee = parseFloat(joinButton.dataset.fee);
-                if (confirm(`Join this tournament for ₹${fee}?`)) {
-                    handleJoinTournament(tId, fee);
-                }
-                return;
+function attachDelegatedHandlers() {
+    document.body.addEventListener('click', (e) => {
+        // JOIN button (home tournament cards)
+        const joinButton = e.target.closest('.join-btn');
+        if (joinButton && !joinButton.disabled) {
+            const tId = joinButton.dataset.id;
+            const fee = parseFloat(joinButton.dataset.fee);
+            if (confirm(`Join this tournament for ₹${fee}?`)) {
+                handleJoinTournament(tId, fee);
             }
+            return;
+        }
 
-            // Copy button (Room ID / Password copies)
-            const copyBtn = e.target.closest('.copy-btn');
-            if (copyBtn) {
-                const toCopy = copyBtn.dataset.copy || '';
-                if (toCopy) {
-                    navigator.clipboard.writeText(toCopy).then(() => {
+        // COPY button (room id / password in My Tournaments)
+        const copyBtn = e.target.closest('.copy-btn');
+        if (copyBtn) {
+            const toCopy = copyBtn.dataset.copy || '';
+            if (toCopy) {
+                // navigator.clipboard requires a user gesture — click is a valid gesture
+                navigator.clipboard.writeText(toCopy).then(() => {
+                    showToast('Copied to clipboard.');
+                }).catch((err) => {
+                    console.error('Clipboard write failed:', err);
+                    // Fallback — try an execCommand-based fallback if needed
+                    try {
+                        const textarea = document.createElement('textarea');
+                        textarea.value = toCopy;
+                        textarea.style.position = 'fixed';
+                        textarea.style.left = '-9999px';
+                        document.body.appendChild(textarea);
+                        textarea.select();
+                        document.execCommand('copy');
+                        document.body.removeChild(textarea);
                         showToast('Copied to clipboard.');
-                    }).catch((err) => {
-                        console.error('Clipboard write failed:', err);
+                    } catch (fallbackErr) {
+                        console.error('Fallback copy failed:', fallbackErr);
                         showToast('Could not copy to clipboard.', true);
-                    });
-                } else {
-                    showToast('Nothing to copy.', true);
-                }
-                return;
+                    }
+                });
+            } else {
+                showToast('Nothing to copy.', true);
             }
-        });
-    }
+            return;
+        }
 
-    // Also handle OK button clicks inside "My Tournaments" completed tab (delegated on the completed container)
-    const completedContainer = document.getElementById('tab-content-completed');
-    if (completedContainer) {
-        completedContainer.addEventListener('click', (e) => {
-            const okBtn = e.target.closest('.ok-btn');
-            if (okBtn) {
-                const participantId = okBtn.dataset.participantId;
-                if (participantId) {
-                    markParticipantSeen(participantId);
-                }
+        // OK button (mark seen) inside completed tab
+        const okBtn = e.target.closest('.ok-btn');
+        if (okBtn) {
+            const participantId = okBtn.dataset.participantId;
+            if (participantId) {
+                markParticipantSeen(participantId);
             }
-        });
-    }
+            return;
+        }
+    }, { passive: false });
 }
 
 /**
  * Marks a participant doc as seenByUser = true when user clicks OK on completed card.
+ * Optimistically updates local cache so UI responds immediately.
  * @param {string} participantId 
  */
 async function markParticipantSeen(participantId) {
@@ -211,9 +233,25 @@ async function markParticipantSeen(participantId) {
     try {
         const pRef = doc(db, "participants", participantId);
         await updateDoc(pRef, { seenByUser: true });
+
+        // Optimistically update local cache (so UI updates immediately)
+        let changed = false;
+        latestJoinedTournaments = latestJoinedTournaments.map(item => {
+            if (item.participant && item.participant.id === participantId) {
+                const newPart = { ...item.participant, seenByUser: true };
+                changed = true;
+                return { participant: newPart, tournament: item.tournament };
+            }
+            return item;
+        });
+
+        if (changed) {
+            // re-render My Tournaments completed list and update dot right away
+            renderMyTournaments(latestJoinedTournaments);
+            updateMyFightsDot();
+        }
+
         showToast("Marked as seen.", false);
-        // update dot immediately (snapshot will also refresh and call updateMyFightsDot)
-        updateMyFightsDot();
     } catch (error) {
         console.error("Mark seen error:", error);
         showToast("Could not mark as seen.", true);
@@ -417,7 +455,7 @@ function initMyTournamentsTabs() {
 /**
  * Updates the small notification dot on the "My Fights" nav button.
  * Priority (Option A): RED > YELLOW > GREEN
- * - RED: Any joined tournament has roomId & roomPassword (i.e., credentials released)
+ * - RED: Any joined tournament is Live AND credentials are present (roomId & password)
  * - YELLOW: Any joined tournament in Upcoming or Live (without credentials)
  * - GREEN: Any joined tournament is Completed AND participant.seenByUser !== true
  */
@@ -433,13 +471,14 @@ function updateMyFightsDot() {
     for (const item of latestJoinedTournaments) {
         const t = item.tournament || {};
         const p = item.participant || {};
-        // Red: credentials released
-        if (t.roomId && t.roomPassword) {
+        // RED: credentials released and tournament is Live
+        if (t.status === 'Live' && t.roomId && t.roomPassword) {
             hasRed = true;
             break; // highest priority
         }
         // Yellow: Upcoming or Live (only if not already red)
         if (t.status === 'Upcoming' || t.status === 'Live') {
+            // If Live but no creds, still yellow
             hasYellow = true;
         }
         // Green: completed and not seen by user
