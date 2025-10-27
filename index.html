@@ -260,6 +260,19 @@
                         <input type="number" id="t-commission" placeholder="Commission % (e.g., 20)" required class="w-full bg-gray-700 p-3 rounded-lg">
                         <!-- New field: Max Participants -->
                         <input type="number" id="t-max-participants" placeholder="Max Participants (e.g., 100)" required min="2" class="w-full bg-gray-700 p-3 rounded-lg">
+                        
+                        <!-- Per-Kill toggle and per-kill prize (new) -->
+                        <div class="flex items-center gap-4">
+                            <label class="flex items-center gap-2">
+                                <input id="t-per-kill-toggle" type="checkbox" class="h-5 w-5">
+                                <span class="text-gray-300 text-sm">Enable Per Kill Prize</span>
+                            </label>
+                        </div>
+                        <div id="per-kill-prize-wrapper" class="hidden">
+                            <input type="number" id="t-per-kill-prize" placeholder="Per Kill Prize (e.g., 10)" class="w-full bg-gray-700 p-3 rounded-lg">
+                            <p class="text-xs text-gray-400">When enabled, prize pool acts as showcase only; payouts = kills × per-kill prize.</p>
+                        </div>
+
                         <button type="submit" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-lg">
                             Create Tournament
                         </button>
@@ -279,15 +292,15 @@
                         </button>
                     </form>
                     
+                    <!-- DECLARE / DISTRIBUTE FORM
+                         The contents are rendered dynamically by JS depending on perKillEnabled.
+                    -->
                     <form id="declare-winner-form" class="bg-gray-800 p-6 rounded-lg space-y-4">
-                        <h3 class="text-lg font-semibold">Declare Winner</h3>
-                        <label for="participant-winner-select" class="block text-sm font-medium text-gray-300 mb-1">Select Winner</label>
-                        <select id="participant-winner-select" class="w-full bg-gray-700 p-3 rounded-lg">
-                            <option value="">Loading participants...</option>
-                        </select>
-                        <button type="submit" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-lg">
-                            Declare Winner & Distribute Prize
-                        </button>
+                        <!-- JS will render either:
+                             - per-kill inputs for each participant + Distribute button
+                             OR
+                             - old select + Declare Winner button
+                        -->
                     </form>
 
                     <h3 class="text-xl font-semibold text-white mt-6 mb-3">Participants</h3>
@@ -296,8 +309,7 @@
                 </section>
 
             </main>
-
-            <nav id="app-nav" class="fixed bottom-0 left-0 right-0 w-full max-w-lg mx-auto h-16 bg-gray-800 border-t border-gray-700 flex justify-around items-center z-40">
+             <nav id="app-nav" class="fixed bottom-0 left-0 right-0 w-full max-w-lg mx-auto h-16 bg-gray-800 border-t border-gray-700 flex justify-around items-center z-40">
                 <button data-view="home-section" class="nav-btn flex flex-col items-center justify-center text-indigo-400 w-1/4">
                     <i class="fas fa-home text-xl"></i>
                     <span class="text-xs font-medium">Home</span>
@@ -306,7 +318,7 @@
                     <i class="fas fa-trophy text-xl"></i>
                     <span class="text-xs font-medium">My Fights</span>
                     <!-- Notification dot (hidden by default). JS will toggle colors and visibility. -->
-            <span id="my-fights-dot" class="hidden absolute -top-1 -right-1 h-3 w-3 rounded-full ring-2 ring-gray-900"></span>
+                    <span id="my-fights-dot" class="hidden absolute -top-1 -right-1 h-3 w-3 rounded-full ring-2 ring-gray-900"></span>
                 </button>
                 <button data-view="wallet-section" class="nav-btn flex flex-col items-center justify-center text-gray-400 w-1/4">
                     <i class="fas fa-wallet text-xl"></i>
@@ -325,6 +337,21 @@
     </div>
 
     <script>
+        // small DOM logic for toggling per-kill input visibility on the create form
+        document.addEventListener('DOMContentLoaded', () => {
+            const perKillToggle = document.getElementById('t-per-kill-toggle');
+            const perKillWrapper = document.getElementById('per-kill-prize-wrapper');
+            if (perKillToggle && perKillWrapper) {
+                perKillToggle.addEventListener('change', () => {
+                    if (perKillToggle.checked) {
+                        perKillWrapper.classList.remove('hidden');
+                    } else {
+                        perKillWrapper.classList.add('hidden');
+                    }
+                });
+            }
+        });
+
         document.addEventListener('contextmenu', event => event.preventDefault());
         document.onselectstart = function() { return false; }
         document.addEventListener('gesturestart', function (e) { e.preventDefault(); });
