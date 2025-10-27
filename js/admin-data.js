@@ -278,7 +278,8 @@ async function handleDeclareWinner(e) {
                 // mark winner and mark unseen for users (so they will see green notification)
                 batch.update(pRef, { status: 'Winner', seenByUser: false });
             } else {
-                batch.update(pRef, { status: 'Participated', seenByUser: false }); // mark not seen so user can OK it
+                // mark non-winners as Completed so they move to the Completed tab in user's UI
+                batch.update(pRef, { status: 'Completed', seenByUser: false });
             }
         });
 
