@@ -206,6 +206,67 @@ export function renderMyTournaments(joinedTournaments) {
 }
 
 /**
+ * Renders the declare-winner / distribute-prize form for the admin manage view.
+ * - If tournament.perKillEnabled === true -> shows inputs for kills per participant and a disabled "Distribute Prize" button which becomes enabled when all inputs are filled.
+ * - If perKillEnabled === false -> shows the old select-based winner declaration UI.
+ *
+ * @param {Array} participants - array of participant objects { id, userId, username, ... }
+ * @param {Object} tournament - tournament doc data (must include id, title, perKillEnabled, perKillPrize)
+ */
+export function renderDeclareWinnerForm(participants, tournament) {
+    const formEl = document.getElementById('declare-winner-form');
+    if (!formEl) return;
+
+    // Clear any previous content
+    formEl.innerHTML = '';
+
+    // Header
+    const titleHtml = `<h3 class="text-lg font-semibold text-white">${tournament.perKillEnabled ? 'Enter Kills & Distribute Per-Kill Prizes' : 'Declare Winner'}</h3>`;
+    let bodyHtml = titleHtml;
+
+    if (tournament.perKillEnabled) {
+        // Per-kill mode: show all participants with kills input
+        bodyHtml += `
+            <p class="text-sm text-gray-400 mb-2">Per Kill Prize: ₹${tournament.perKillPrize || 0}</p>
+            <div id="per-kill-participants" class="space-y-2 max-h-64 overflow-y-auto mb-3">
+                ${participants.map(p => `
+                    <div class="bg-gray-700 p-3 rounded flex items-center justify-between">
+                        <div class="flex items-center gap-3">
+                            <div class="h-8 w-8 rounded-full bg-gray-600 flex items-center justify-center text-sm text-white">${(p.username || 'U').charAt(0).toUpperCase()}</div>
+                            <div>
+                                <div class="text-white font-medium">${p.username}</div>
+                                <div class="text-xs text-gray-400">UserID: ${p.userId}</div>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <label class="text-xs text-gray-400">Kills</label>
+                            <input type="number" min="0" value="${p.kills || 0}" data-participant-id="${p.id}" class="kill-input w-20 bg-gray-600 p-2 rounded text-white text-sm" />
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+            <div>
+                <button id="distribute-per-kill-btn" type="submit" class="w-full bg-indigo-600 disabled:opacity-60 disabled:cursor-not-allowed text-white font-bold py-3 rounded" disabled>
+                    Distribute Prize
+                </button>
+            </div>
+        `;
+    } else {
+        // Normal mode: show select dropdown and a button
+        bodyHtml += `
+            <label for="participant-winner-select" class="block text-sm font-medium text-gray-300 mb-1">Select Winner</label>
+            <select id="participant-winner-select" class="w-full bg-gray-700 p-3 rounded-lg mb-3">
+                <option value="">Select a winner...</option>
+                ${participants.map(p => `<option value="${p.userId}" data-participant-id="${p.id}">${p.username}</option>`).join('')}
+            </select>
+            <div><button id="declare-winner-btn" type="submit" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded">Declare Winner & Distribute Prize</button></div>
+        `;
+    }
+
+    formEl.innerHTML = `<div class="p-2">${bodyHtml}</div>`;
+}
+
+/**
  * Renders the transaction history in the wallet.
  * @param {Array} transactions - Array of transaction objects.
  */
@@ -275,20 +336,19 @@ export function renderManageParticipants(participants) {
     
     if (participants.length === 0) {
         listEl.innerHTML = '<p class="text-gray-400">No participants have joined yet.</p>';
-        selectEl.innerHTML = '<option value="">No participants</option>';
+        if (selectEl) selectEl.innerHTML = '<option value="">No participants</option>';
         return;
     }
     
     listEl.innerHTML = participants.map(p => {
         return `
         <div class="bg-gray-700 p-3 rounded flex justify-between items-center">
-            <span>${p.username}</span>
-            <span class="text-sm text-gray-400">${p.userId}</span>
+            <div>
+                <div class="text-white font-medium">${p.username}</div>
+                <div class="text-xs text-gray-400">UserID: ${p.userId}</div>
+            </div>
+            <div class="text-sm text-gray-300">${p.status || 'Joined'}</div>
         </div>
         `;
-    }).join('');
-    
-    selectEl.innerHTML = '<option value="">Select a winner...</option>' + participants.map(p => {
-        return `<option value="${p.userId}" data-username="${p.username}">${p.username}</option>`;
     }).join('');
 }
