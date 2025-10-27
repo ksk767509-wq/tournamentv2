@@ -135,7 +135,8 @@ export function renderHomeTournaments(tournaments, joinedSet = new Set()) {
 
 /**
  * Renders the tournaments for the "My Tournaments" page.
- * @param {Array} joinedTournaments - Array of combined participant and tournament data.
+ * Expects joinedTournaments to be an array of:
+ *  { participant: { id, tournamentId, status, seen }, tournament: { id, title, gameName, status, roomId, roomPassword, matchTime, prizePool } }
  */
 export function renderMyTournaments(joinedTournaments) {
     const liveList = document.getElementById('tab-content-live');
@@ -145,7 +146,7 @@ export function renderMyTournaments(joinedTournaments) {
     const completedHtml = [];
     
     if (joinedTournaments.length === 0) {
-        liveList.innerHTML = '<p class="text-gray-400 text-center">You haven\'t joined any tournaments yet.</p>';
+        liveList.innerHTML = '<p class="text-gray-400 text-center">You haven\\'t joined any tournaments yet.</p>';
         completedList.innerHTML = '<p class="text-gray-400 text-center">No completed tournaments.</p>';
         return;
     }
@@ -153,30 +154,41 @@ export function renderMyTournaments(joinedTournaments) {
     joinedTournaments.forEach(item => {
         const t = item.tournament;
         const p = item.participant;
-        const matchTime = t.matchTime.toDate ? t.matchTime.toDate().toLocaleString() : new Date(t.matchTime).toLocaleString();
+        const matchTime = t.matchTime && t.matchTime.toDate ? t.matchTime.toDate().toLocaleString() : (t.matchTime ? new Date(t.matchTime).toLocaleString() : 'TBD');
         
+        // Room area: show room id/password if Live and available, plus copy buttons
+        const roomArea = (t.status === 'Live') ? `
+            <div class="bg-gray-700 rounded p-3 mb-3 flex flex-col gap-2">
+                <div class="flex items-center">
+                    <p class="text-sm text-gray-300">Room ID: <span class="font-bold text-white" id="room-${t.id}">${t.roomId || ''}</span></p>
+                    ${t.roomId ? `<button class="copy-btn ml-2" data-copy-type="room" data-copy-value="${t.roomId}" title="Copy Room ID"><i class="fas fa-copy text-sm text-gray-300"></i></button>` : ''}
+                </div>
+                <div class="flex items-center">
+                    <p class="text-sm text-gray-300">Password: <span class="font-bold text-white" id="pass-${t.id}">${t.roomPassword || ''}</span></p>
+                    ${t.roomPassword ? `<button class="copy-btn ml-2" data-copy-type="pass" data-copy-value="${t.roomPassword}" title="Copy Password"><i class="fas fa-copy text-sm text-gray-300"></i></button>` : ''}
+                </div>
+            </div>
+        ` : '';
+
+        // If tournament completed and participant hasn't seen, show OK button
+        const okButton = (t.status === 'Completed' && !p.seen) ? `<button class="ok-btn w-full bg-green-600 hover:bg-green-700 text-white font-bold py-2 rounded mt-3" data-participant-id="${p.id}">OK</button>` : '';
+
         const cardHtml = `
         <div class="bg-gray-800 rounded-lg shadow-lg p-5">
             <h3 class="text-xl font-bold text-white mb-2">${t.title}</h3>
             <p class="text-sm text-gray-400 mb-4">${t.gameName} - ${matchTime}</p>
-            ${
-                (t.status === 'Live' && t.roomId) ? `
-                <div class="bg-gray-700 rounded p-3 mb-3">
-                    <p class="text-sm text-gray-300">Room ID: <span class="font-bold text-white">${t.roomId}</span></p>
-                    <p class="text-sm text-gray-300">Password: <span class="font-bold text-white">${t.roomPassword}</span></p>
-                </div>
-                ` : ''
-            }
+            ${roomArea}
             <div class="flex justify-between items-center">
                 <div>
                     <p class="text-xs text-gray-400">Status</p>
-                    <p class="text-lg font-semibold ${p.status === 'Winner' ? 'text-green-400' : 'text-yellow-400'}">${p.status}</p>
+                    <p class="text-lg font-semibold ${p.status === 'Winner' ? 'text-green-400' : (t.status === 'Completed' ? 'text-gray-400' : 'text-yellow-400')}">${p.status}</p>
                 </div>
                 <div>
                     <p class="text-xs text-gray-400">Prize Pool</p>
                     <p class="text-lg font-semibold text-green-400">₹${t.prizePool}</p>
                 </div>
             </div>
+            ${okButton}
         </div>
         `;
         
