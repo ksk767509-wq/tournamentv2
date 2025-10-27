@@ -74,6 +74,12 @@ export function initUserListeners(userId) {
         const promises = [];
         // Reset joined set
         joinedTournamentIds = new Set();
+
+        // Track notification dot states
+        let hasUpcomingOrLive = false;
+        let hasLiveWithCreds = false;
+        let hasCompletedUnseen = false;
+
         querySnapshot.forEach((pDoc) => {
             const participant = { id: pDoc.id, ...pDoc.data() };
             // Track joined tournament ids
@@ -82,7 +88,22 @@ export function initUserListeners(userId) {
             promises.push(
                 getDoc(tDocRef).then((tDoc) => {
                     if (tDoc.exists()) {
-                        joinedTournaments.push({ participant, tournament: { id: tDoc.id, ...tDoc.data() } });
+                        const tData = tDoc.data();
+                        joinedTournaments.push({ participant, tournament: { id: tDoc.id, ...tData } });
+
+                        // Determine notification categories:
+                        if (tData.status === 'Upcoming') {
+                            hasUpcomingOrLive = true;
+                        }
+                        if (tData.status === 'Live') {
+                            hasUpcomingOrLive = true;
+                            if (tData.roomId && tData.roomPassword) {
+                                hasLiveWithCreds = true;
+                            }
+                        }
+                        if (tData.status === 'Completed' && !participant.seen) {
+                            hasCompletedUnseen = true;
+                        }
                     }
                 })
             );
@@ -94,6 +115,9 @@ export function initUserListeners(userId) {
 
         // After updating joined set, re-render home tournaments (to reflect Joined / Full states)
         renderHomeTournaments(latestTournaments, joinedTournamentIds);
+
+        // Update nav dot (priority: red > yellow > green). If multiple categories, red takes precedence.
+        updateMyFightsNavDot({ hasUpcomingOrLive, hasLiveWithCreds, hasCompletedUnseen });
     }, (error) => {
         console.error("Error loading my tournaments:", error);
         showToast("Could not load your tournaments.", true);
@@ -139,6 +163,9 @@ export function initUserUI(userData) {
     initWalletButtons();
     initProfileForms();
     initMyTournamentsTabs();
+
+    // Delegated listeners for copy buttons and OK buttons in My Tournaments
+    initMyTournamentsInteractions();
 }
 
 /**
@@ -155,6 +182,74 @@ function initJoinButtonListener() {
             }
         }
     });
+}
+
+/**
+ * Initialize delegated handlers for "copy" and "OK" buttons in My Tournaments
+ */
+function initMyTournamentsInteractions() {
+    const container = document.getElementById('my-tournaments-content');
+    if (!container) return;
+
+    container.addEventListener('click', async (e) => {
+        const copyBtn = e.target.closest('.copy-btn');
+        if (copyBtn) {
+            const type = copyBtn.dataset.copyType;
+            const value = copyBtn.dataset.copyValue;
+            if (value) {
+                copyToClipboard(value);
+                showToast(`${type === 'room' ? 'Room ID' : 'Password'} copied to clipboard.`, false);
+            }
+            return;
+        }
+
+        const okBtn = e.target.closest('.ok-btn');
+        if (okBtn) {
+            const participantId = okBtn.dataset.participantId;
+            if (!participantId) return;
+            // Update participant doc seen:true
+            try {
+                showLoader();
+                const pRef = doc(db, "participants", participantId);
+                await updateDoc(pRef, { seen: true });
+                showToast("Marked as seen.", false);
+            } catch (err) {
+                console.error("OK mark error:", err);
+                showToast("Could not mark as seen.", true);
+            } finally {
+                hideLoader();
+            }
+            return;
+        }
+    });
+}
+
+/**
+ * Copy helper — tries navigator.clipboard first, falls back to textarea.
+ * @param {string} text 
+ */
+function copyToClipboard(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).catch(() => {
+            fallbackCopy(text);
+        });
+    } else {
+        fallbackCopy(text);
+    }
+}
+function fallbackCopy(text) {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    try {
+        document.execCommand('copy');
+    } catch (e) {
+        console.error('Copy fallback failed', e);
+    }
+    document.body.removeChild(ta);
 }
 
 /**
@@ -203,13 +298,14 @@ async function handleJoinTournament(tournamentId, entryFee) {
             // - Update user wallet
             transaction.update(userRef, { walletBalance: currentBalance - entryFee });
             
-            // - Create participant doc
+            // - Create participant doc (NEW: include seen:false)
             transaction.set(participantRef, {
                 userId: userId,
                 username: userDoc.data().username,
                 tournamentId: tournamentId,
                 status: 'Joined',
-                joinedAt: serverTimestamp()
+                joinedAt: serverTimestamp(),
+                seen: false
             });
             
             // - Create transaction doc
@@ -348,4 +444,27 @@ function initMyTournamentsTabs() {
             document.getElementById(`tab-content-${tab.dataset.tab}`).classList.remove('hidden');
         });
     });
+}
+
+/**
+ * Updates the My Fights nav dot based on categories.
+ * Priority: red (live with creds) > yellow (upcoming/live) > green (completed unseen)
+ * @param {object} flags
+ */
+function updateMyFightsNavDot(flags) {
+    const dot = document.getElementById('my-fights-dot');
+    if (!dot) return;
+    // Reset
+    dot.className = 'nav-dot';
+    dot.classList.remove('show', 'yellow', 'red', 'green', 'glow');
+
+    if (flags.hasLiveWithCreds) {
+        dot.classList.add('show', 'red');
+    } else if (flags.hasUpcomingOrLive) {
+        dot.classList.add('show', 'yellow');
+    } else if (flags.hasCompletedUnseen) {
+        dot.classList.add('show', 'green');
+    } else {
+        // nothing to show
+    }
 }
