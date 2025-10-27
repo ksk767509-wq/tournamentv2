@@ -31,6 +31,15 @@ let latestJoinedTournaments = [];
 // Ensure we attach global delegated handlers only once
 let handlersAttached = false;
 
+// State for join modal flow
+let joinFlowState = {
+    tournamentId: null,
+    entryFee: 0,
+    gameMode: 'solo',
+    ingameName: '',
+    selectedSlot: null // { slotIndex, teamId }
+};
+
 /**
  * Initializes all user-specific listeners when they log in.
  * @param {string} userId - The current user's UID.
@@ -133,6 +142,9 @@ export function initUserListeners(userId) {
         attachDelegatedHandlers();
         handlersAttached = true;
     }
+
+    // Attach join modal UI handlers (one-time)
+    attachJoinModalHandlers();
 }
 
 /**
@@ -160,7 +172,7 @@ export function initUserUI(userData) {
 
 /**
  * Attach a single delegated click handler to the document body to handle:
- * - .join-btn (home)
+ * - .join-btn (home) -> open join modal flow
  * - .copy-btn (room id/password copy in My Tournaments)
  * - .ok-btn (mark seen in completed)
  *
@@ -168,14 +180,13 @@ export function initUserUI(userData) {
  */
 function attachDelegatedHandlers() {
     document.body.addEventListener('click', (e) => {
-        // JOIN button (home tournament cards)
+        // JOIN button (home tournament cards) -> open modal flow
         const joinButton = e.target.closest('.join-btn');
         if (joinButton && !joinButton.disabled) {
             const tId = joinButton.dataset.id;
             const fee = parseFloat(joinButton.dataset.fee);
-            if (confirm(`Join this tournament for ₹${fee}?`)) {
-                handleJoinTournament(tId, fee);
-            }
+            const mode = joinButton.dataset.mode || 'solo';
+            startJoinFlow(tId, fee, mode);
             return;
         }
 
@@ -184,12 +195,10 @@ function attachDelegatedHandlers() {
         if (copyBtn) {
             const toCopy = copyBtn.dataset.copy || '';
             if (toCopy) {
-                // navigator.clipboard requires a user gesture — click is a valid gesture
                 navigator.clipboard.writeText(toCopy).then(() => {
                     showToast('Copied to clipboard.');
                 }).catch((err) => {
                     console.error('Clipboard write failed:', err);
-                    // Fallback — try an execCommand-based fallback if needed
                     try {
                         const textarea = document.createElement('textarea');
                         textarea.value = toCopy;
@@ -224,6 +233,335 @@ function attachDelegatedHandlers() {
 }
 
 /**
+ * Attach handlers specific to the join modal steps
+ * (close/back/next/join).
+ */
+function attachJoinModalHandlers() {
+    // Step1 elements
+    const step1 = document.getElementById('join-modal-step1');
+    const step1Next = document.getElementById('join-step1-next');
+    const step1Cancel = document.getElementById('join-step1-cancel');
+    const step1Close = document.getElementById('join-step1-close');
+    const ingameInput = document.getElementById('join-ingame-name');
+
+    // Step2 elements
+    const step2 = document.getElementById('join-modal-step2');
+    const step2Back = document.getElementById('join-step2-back');
+    const step2Close = document.getElementById('join-step2-close');
+    const step2Join = document.getElementById('join-step2-join');
+
+    if (step1Next) {
+        step1Next.addEventListener('click', () => {
+            const name = (ingameInput.value || '').trim();
+            if (!name) {
+                showToast('Please enter your in-game name.', true);
+                return;
+            }
+            joinFlowState.ingameName = name;
+            // go to step 2
+            hideModal('join-modal-step1');
+            buildAndShowSlotSelection();
+        });
+    }
+    if (step1Cancel) {
+        step1Cancel.addEventListener('click', () => {
+            hideModal('join-modal-step1');
+            resetJoinFlowState();
+        });
+    }
+    if (step1Close) {
+        step1Close.addEventListener('click', () => {
+            hideModal('join-modal-step1');
+            resetJoinFlowState();
+        });
+    }
+
+    if (step2Back) {
+        step2Back.addEventListener('click', () => {
+            hideModal('join-modal-step2');
+            showModal('join-modal-step1');
+        });
+    }
+    if (step2Close) {
+        step2Close.addEventListener('click', () => {
+            hideModal('join-modal-step2');
+            resetJoinFlowState();
+        });
+    }
+
+    if (step2Join) {
+        step2Join.addEventListener('click', async () => {
+            if (!joinFlowState.selectedSlot) {
+                showToast('Please select a slot.', true);
+                return;
+            }
+            // call join handler with slot info
+            await handleJoinTournamentWithSlot(
+                joinFlowState.tournamentId,
+                joinFlowState.entryFee,
+                joinFlowState.ingameName,
+                joinFlowState.selectedSlot
+            );
+            hideModal('join-modal-step2');
+            resetJoinFlowState();
+        });
+    }
+}
+
+/**
+ * Opens join modal step 1 and sets joinFlow state with tournament basics.
+ */
+function startJoinFlow(tournamentId, entryFee, gameMode='solo') {
+    joinFlowState.tournamentId = tournamentId;
+    joinFlowState.entryFee = entryFee;
+    joinFlowState.gameMode = gameMode;
+    joinFlowState.ingameName = '';
+    joinFlowState.selectedSlot = null;
+
+    // clear step1 input
+    const ingameInput = document.getElementById('join-ingame-name');
+    if (ingameInput) ingameInput.value = '';
+
+    showModal('join-modal-step1');
+}
+
+/**
+ * Builds slot/team selection UI for the given tournament and shows step 2 modal.
+ * Uses latest tournament data and participants to compute occupied slots.
+ */
+async function buildAndShowSlotSelection() {
+    const tournamentId = joinFlowState.tournamentId;
+    const gameMode = joinFlowState.gameMode || 'solo';
+
+    const tournament = latestTournaments.find(t => t.id === tournamentId);
+    if (!tournament) {
+        showToast('Tournament not found.', true);
+        hideModal('join-modal-step1');
+        return;
+    }
+    // fetch participants for this tournament (live snapshot may not be available here)
+    const pCollRef = collection(db, "participants");
+    const q = query(pCollRef, where("tournamentId", "==", tournamentId));
+    const pSnap = await getDocs(q);
+    const participants = [];
+    pSnap.forEach(d => participants.push({ id: d.id, ...d.data() }));
+
+    const max = tournament.maxParticipants || 0;
+    const teamSize = (gameMode === 'duo') ? 2 : (gameMode === 'squad') ? 4 : 1;
+
+    const slotsContainer = document.getElementById('join-slot-container');
+    const desc = document.getElementById('join-step2-description');
+    slotsContainer.innerHTML = '';
+
+    // Build occupied map: slotIndex -> participant
+    // We'll treat slots as indices 1..max, and teamId as Math.ceil(slot / teamSize)
+    const occupied = {};
+    participants.forEach(p => {
+        if (typeof p.slotIndex === 'number') {
+            occupied[p.slotIndex] = p;
+        }
+    });
+
+    // Build UI depending on mode
+    if (gameMode === 'solo') {
+        desc.textContent = `Select any available position (1 to ${max}).`;
+        // Show grid of slots
+        const grid = document.createElement('div');
+        grid.className = 'grid grid-cols-5 gap-2';
+        for (let i = 1; i <= max; i++) {
+            const isOccupied = !!occupied[i];
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = `py-2 rounded ${isOccupied ? 'bg-gray-600 text-gray-400 cursor-not-allowed' : 'bg-gray-700 text-white hover:bg-indigo-600'}`;
+            btn.textContent = `#${i}`;
+            btn.disabled = isOccupied;
+            btn.dataset.slotIndex = i;
+            btn.addEventListener('click', () => {
+                // clear previous selection highlight
+                Array.from(grid.querySelectorAll('button')).forEach(b => b.classList.remove('ring-2', 'ring-indigo-400'));
+                btn.classList.add('ring-2', 'ring-indigo-400');
+                joinFlowState.selectedSlot = { slotIndex: i, teamId: null };
+                document.getElementById('join-step2-join').disabled = false;
+            });
+            grid.appendChild(btn);
+        }
+        slotsContainer.appendChild(grid);
+    } else {
+        // Duo or Squad -> build teams
+        const totalTeams = Math.floor(max / teamSize);
+        desc.textContent = `Select any available slot inside a team (Team size: ${teamSize}).`;
+
+        for (let team = 1; team <= totalTeams; team++) {
+            const teamDiv = document.createElement('div');
+            teamDiv.className = 'bg-gray-800 p-3 rounded';
+            const header = document.createElement('div');
+            header.className = 'flex justify-between items-center mb-2';
+            header.innerHTML = `<div class="font-medium text-white">Team ${team}</div><div class="text-xs text-gray-400">${teamSize} slots</div>`;
+            teamDiv.appendChild(header);
+
+            const slotRow = document.createElement('div');
+            slotRow.className = 'flex gap-2';
+            for (let s = 0; s < teamSize; s++) {
+                const slotIndex = ((team - 1) * teamSize) + s + 1; // 1-indexed
+                const isOccupied = !!occupied[slotIndex];
+                const slotBtn = document.createElement('button');
+                slotBtn.type = 'button';
+                slotBtn.className = `flex-1 py-2 rounded ${isOccupied ? 'bg-gray-600 text-gray-400 cursor-not-allowed' : 'bg-gray-700 text-white hover:bg-indigo-600'}`;
+                slotBtn.textContent = `#${slotIndex}`;
+                slotBtn.disabled = isOccupied;
+                slotBtn.dataset.slotIndex = slotIndex;
+                slotBtn.dataset.teamId = team;
+                slotBtn.addEventListener('click', () => {
+                    // clear existing highlights
+                    slotsContainer.querySelectorAll('button').forEach(b => b.classList.remove('ring-2','ring-indigo-400'));
+                    slotBtn.classList.add('ring-2','ring-indigo-400');
+                    joinFlowState.selectedSlot = { slotIndex: slotIndex, teamId: team };
+                    document.getElementById('join-step2-join').disabled = false;
+                });
+                slotRow.appendChild(slotBtn);
+            }
+            teamDiv.appendChild(slotRow);
+            slotsContainer.appendChild(teamDiv);
+        }
+    }
+
+    // Show step2 modal
+    hideModal('join-modal-step1');
+    showModal('join-modal-step2');
+    // Initially disable the final join button until selection made
+    document.getElementById('join-step2-join').disabled = true;
+}
+
+/**
+ * Performs the join operation including slot assignment.
+ * Similar to previous handleJoinTournament but includes slot/team and ingameName.
+ * Uses a pre-check for slot occupancy and then a transaction to debit wallet and create participant doc + increment tournament currentParticipants.
+ *
+ * @param {string} tournamentId
+ * @param {number} entryFee
+ * @param {string} ingameName
+ * @param {object} slotInfo { slotIndex: number, teamId: number|null }
+ */
+async function handleJoinTournamentWithSlot(tournamentId, entryFee, ingameName, slotInfo) {
+    showLoader();
+    const userId = auth.currentUser.uid;
+    if (!userId) {
+        showToast('User not authenticated.', true);
+        hideLoader();
+        return;
+    }
+
+    // Pre-check: ensure user hasn't already joined this tournament
+    try {
+        const existingQuery = query(collection(db, "participants"), where("userId", "==", userId), where("tournamentId", "==", tournamentId));
+        const existingSnap = await getDocs(existingQuery);
+        if (!existingSnap.empty) {
+            showToast('You have already joined this tournament.', true);
+            hideLoader();
+            return;
+        }
+
+        // Pre-check slot not taken
+        if (slotInfo && typeof slotInfo.slotIndex === 'number') {
+            const slotQuery = query(collection(db, "participants"), where("tournamentId", "==", tournamentId), where("slotIndex", "==", slotInfo.slotIndex));
+            const slotSnap = await getDocs(slotQuery);
+            if (!slotSnap.empty) {
+                showToast('Selected slot is already taken. Please choose another.', true);
+                hideLoader();
+                return;
+            }
+        }
+
+        // Transaction: debit wallet, create participant doc, increment tournament currentParticipants
+        const userRef = doc(db, "users", userId);
+        const tournamentRef = doc(db, "tournaments", tournamentId);
+        const participantRef = doc(collection(db, "participants"));
+        const transactionRef = doc(collection(db, "transactions"));
+
+        await runTransaction(db, async (transaction) => {
+            const userDoc = await transaction.get(userRef);
+            if (!userDoc.exists()) throw new Error("User document not found.");
+            const currentBalance = userDoc.data().walletBalance;
+            if (currentBalance < entryFee) throw new Error("Insufficient Balance");
+
+            const tDoc = await transaction.get(tournamentRef);
+            if (!tDoc.exists()) throw new Error("Tournament not found.");
+            const tData = tDoc.data();
+            if (tData.status !== 'Upcoming') throw new Error("Tournament is no longer available.");
+
+            const max = tData.maxParticipants || 0;
+            const current = typeof tData.currentParticipants === 'number' ? tData.currentParticipants : 0;
+            if (current >= max) throw new Error("Tournament is already full.");
+
+             // Final slot check inside transaction is limited — we re-check by querying participants docs (best-effort)
+            // (Firestore transactions have limitations reading collection queries, but we'll perform a final read outside transaction and assume uniqueness)
+            transaction.update(userRef, { walletBalance: currentBalance - entryFee });
+
+            transaction.set(participantRef, {
+                userId: userId,
+                username: userDoc.data().username,
+                ingameName: ingameName,
+                tournamentId: tournamentId,
+                status: 'Joined',
+                joinedAt: serverTimestamp(),
+                slotIndex: slotInfo ? slotInfo.slotIndex : null,
+                teamId: slotInfo ? slotInfo.teamId : null
+            });
+
+            transaction.set(transactionRef, {
+                userId: userId,
+                amount: entryFee,
+                type: 'debit',
+                description: `Entry fee for ${tData.title}`,
+                createdAt: serverTimestamp()
+            });
+
+            transaction.update(tournamentRef, { currentParticipants: (current + 1) });
+        });
+
+        showToast("Joined tournament successfully!", false);
+    } catch (error) {
+        console.error("Join tournament error:", error);
+        showToast(error.message || 'Could not join tournament.', true);
+    } finally {
+        hideLoader();
+    }
+}
+
+/**
+ * Utility: show modal by id
+ */
+function showModal(id) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.classList.remove('hidden');
+    el.classList.add('flex');
+}
+
+/**
+ * Utility: hide modal by id
+ */
+function hideModal(id) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.classList.add('hidden');
+    el.classList.remove('flex');
+}
+
+/**
+ * Reset joinFlowState
+ */
+function resetJoinFlowState() {
+    joinFlowState = {
+        tournamentId: null,
+        entryFee: 0,
+        gameMode: 'solo',
+        ingameName: '',
+        selectedSlot: null
+    };
+}
+
+/**
  * Marks a participant doc as seenByUser = true when user clicks OK on completed card.
  * Optimistically updates local cache so UI responds immediately.
  * @param {string} participantId 
@@ -255,82 +593,6 @@ async function markParticipantSeen(participantId) {
     } catch (error) {
         console.error("Mark seen error:", error);
         showToast("Could not mark as seen.", true);
-    } finally {
-        hideLoader();
-    }
-}
-
-/**
- * Handles the logic for a user joining a tournament.
- * Uses a Firestore Transaction for safety and increments currentParticipants on tournament doc.
- * @param {string} tournamentId 
- * @param {number} entryFee 
- */
-async function handleJoinTournament(tournamentId, entryFee) {
-    showLoader();
-    const userId = auth.currentUser.uid;
-    const userRef = doc(db, "users", userId);
-    const participantRef = doc(collection(db, "participants")); // New doc (DocRef)
-    const transactionRef = doc(collection(db, "transactions")); // New doc
-    const tournamentRef = doc(db, "tournaments", tournamentId);
-
-    try {
-        await runTransaction(db, async (transaction) => {
-            // 1. Get user doc
-            const userDoc = await transaction.get(userRef);
-            if (!userDoc.exists()) throw new Error("User document not found.");
-
-            // 2. Check balance
-            const currentBalance = userDoc.data().walletBalance;
-            if (currentBalance < entryFee) throw new Error("Insufficient Balance");
-            
-            // 3. Get tournament doc (to check status and participant limits)
-            const tDoc = await transaction.get(tournamentRef);
-            if (!tDoc.exists()) throw new Error("Tournament not found.");
-            const tData = tDoc.data();
-            if (tData.status !== 'Upcoming') throw new Error("Tournament is no longer available.");
-
-            const max = tData.maxParticipants || 100;
-            const current = typeof tData.currentParticipants === 'number' ? tData.currentParticipants : 0;
-            if (current >= max) throw new Error("Tournament is already full.");
-
-            // 4. Check if already joined
-            const participantQuery = query(collection(db, "participants"), where("userId", "==", userId), where("tournamentId", "==", tournamentId));
-            const existing = await getDocs(participantQuery);
-            if (!existing.empty) {
-                throw new Error("You have already joined this tournament.");
-            }
-
-            // All checks passed, perform writes atomically:
-            // - Update user wallet
-            transaction.update(userRef, { walletBalance: currentBalance - entryFee });
-            
-            // - Create participant doc
-            transaction.set(participantRef, {
-                userId: userId,
-                username: userDoc.data().username,
-                tournamentId: tournamentId,
-                status: 'Joined',
-                joinedAt: serverTimestamp()
-            });
-            
-            // - Create transaction doc
-            transaction.set(transactionRef, {
-                userId: userId,
-                amount: entryFee,
-                type: 'debit',
-                description: `Entry fee for ${tData.title}`,
-                createdAt: serverTimestamp()
-            });
-
-            // - Increment tournament's currentParticipants by 1
-            transaction.update(tournamentRef, { currentParticipants: (current + 1) });
-        });
-
-        showToast("Joined tournament successfully!", false);
-    } catch (error) {
-        console.error("Join tournament error:", error);
-        showToast(error.message, true);
     } finally {
         hideLoader();
     }
@@ -478,7 +740,6 @@ function updateMyFightsDot() {
         }
         // Yellow: Upcoming or Live (only if not already red)
         if (t.status === 'Upcoming' || t.status === 'Live') {
-            // If Live but no creds, still yellow
             hasYellow = true;
         }
         // Green: completed and not seen by user
