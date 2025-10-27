@@ -114,23 +114,12 @@ function initAdminUI() {
     // Declare Winner form submit - delegate to handleDeclareWinner which will detect per-kill mode
     document.getElementById('declare-winner-form').addEventListener('submit', handleDeclareWinner);
 
-    // Input listener inside manage section: enable Distribute button when all kills are entered
-    document.getElementById('manage-tournament-section').addEventListener('input', (e) => {
-        if (e.target && e.target.matches('.kill-input')) {
-            const form = document.getElementById('declare-winner-form');
-            if (!form) return;
-            const allInputs = Array.from(form.querySelectorAll('.kill-input'));
-            const btn = document.getElementById('distribute-per-kill-btn');
-            if (!btn) return;
-            // All inputs must be present (have value, even zero counts)
-            const allFilled = allInputs.length > 0 && allInputs.every(i => i.value !== null && i.value !== undefined && i.value !== '');
-            btn.disabled = !allFilled;
-        }
-    });
+    // Input listener inside manage section (kill inputs) is handled in ui.js previously
 }
 
 /**
  * Handles creation of a new tournament.
+ * Validates game mode constraints: duo -> maxParticipants % 2 === 0 ; squad -> maxParticipants % 4 === 0
  * @param {Event} e 
  */
 async function handleCreateTournament(e) {
@@ -140,6 +129,27 @@ async function handleCreateTournament(e) {
     try {
         const perKillEnabled = document.getElementById('t-per-kill-toggle').checked;
         const perKillPrize = parseFloat(document.getElementById('t-per-kill-prize').value || 0);
+        const maxParticipants = parseInt(document.getElementById('t-max-participants').value || '0', 10);
+        const gameMode = document.getElementById('t-game-mode').value || 'solo';
+        const modeMsgEl = document.getElementById('mode-validation-msg');
+
+        // Validate game mode constraints
+        modeMsgEl.classList.add('hidden');
+        if (gameMode === 'duo') {
+            if (maxParticipants % 2 !== 0) {
+                modeMsgEl.textContent = `Max participants (${maxParticipants}) is not divisible by 2. Provide a number divisible by 2 for Duo.`;
+                modeMsgEl.classList.remove('hidden');
+                hideLoader();
+                return;
+            }
+        } else if (gameMode === 'squad') {
+            if (maxParticipants % 4 !== 0) {
+                modeMsgEl.textContent = `Max participants (${maxParticipants}) is not divisible by 4. Provide a number divisible by 4 for Squad.`;
+                modeMsgEl.classList.remove('hidden');
+                hideLoader();
+                return;
+            }
+        }
 
         const formData = {
             title: document.getElementById('t-title').value,
@@ -152,11 +162,13 @@ async function handleCreateTournament(e) {
             roomId: '',
             roomPassword: '',
             // NEW: participant limits
-            maxParticipants: parseInt(document.getElementById('t-max-participants').value, 10) || 100,
+            maxParticipants: maxParticipants,
             currentParticipants: 0,
             // NEW: per-kill
             perKillEnabled: !!perKillEnabled,
             perKillPrize: perKillEnabled ? (isNaN(perKillPrize) ? 0 : perKillPrize) : 0,
+            // NEW: game mode
+            gameMode: gameMode,
             createdAt: serverTimestamp()
         };
         
@@ -172,6 +184,9 @@ async function handleCreateTournament(e) {
     }
 }
 
+/* rest of admin-data.js remains unchanged (manage view / declare winner functions)
+   They were already updated earlier to support per-kill; no changes required for this step here.
+*/
 /**
  * Loads the specific view for managing a single tournament.
  * @param {string} tournamentId 
