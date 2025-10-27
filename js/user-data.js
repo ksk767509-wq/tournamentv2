@@ -25,6 +25,8 @@ let listeners = [];
 let latestTournaments = [];
 // Set of tournamentIds that current user has joined
 let joinedTournamentIds = new Set();
+// Cache latest joinedTournaments (array of { participant, tournament })
+let latestJoinedTournaments = [];
 
 /**
  * Initializes all user-specific listeners when they log in.
@@ -37,6 +39,7 @@ export function initUserListeners(userId) {
     // Reset caches
     latestTournaments = [];
     joinedTournamentIds = new Set();
+    latestJoinedTournaments = [];
     
     // 1. Wallet Balance Listener
     const userDocRef = doc(db, "users", userId);
@@ -61,6 +64,8 @@ export function initUserListeners(userId) {
         // Update cache and trigger render with joined set
         latestTournaments = tournaments;
         renderHomeTournaments(latestTournaments, joinedTournamentIds);
+        // update the My Fights dot as tournaments changed (status/roomId changes can affect dot)
+        updateMyFightsDot();
     }, (error) => {
         console.error("Error loading tournaments:", error);
         showToast("Could not load tournaments.", true);
@@ -74,12 +79,6 @@ export function initUserListeners(userId) {
         const promises = [];
         // Reset joined set
         joinedTournamentIds = new Set();
-
-        // Track notification dot states
-        let hasUpcomingOrLive = false;
-        let hasLiveWithCreds = false;
-        let hasCompletedUnseen = false;
-
         querySnapshot.forEach((pDoc) => {
             const participant = { id: pDoc.id, ...pDoc.data() };
             // Track joined tournament ids
@@ -88,22 +87,7 @@ export function initUserListeners(userId) {
             promises.push(
                 getDoc(tDocRef).then((tDoc) => {
                     if (tDoc.exists()) {
-                        const tData = tDoc.data();
-                        joinedTournaments.push({ participant, tournament: { id: tDoc.id, ...tData } });
-
-                        // Determine notification categories:
-                        if (tData.status === 'Upcoming') {
-                            hasUpcomingOrLive = true;
-                        }
-                        if (tData.status === 'Live') {
-                            hasUpcomingOrLive = true;
-                            if (tData.roomId && tData.roomPassword) {
-                                hasLiveWithCreds = true;
-                            }
-                        }
-                        if (tData.status === 'Completed' && !participant.seen) {
-                            hasCompletedUnseen = true;
-                        }
+                        joinedTournaments.push({ participant, tournament: { id: tDoc.id, ...tDoc.data() } });
                     }
                 })
             );
@@ -111,13 +95,14 @@ export function initUserListeners(userId) {
         await Promise.all(promises);
         // Sort by match time (newest first)
         joinedTournaments.sort((a, b) => b.tournament.matchTime - a.tournament.matchTime);
+        latestJoinedTournaments = joinedTournaments;
         renderMyTournaments(joinedTournaments);
 
         // After updating joined set, re-render home tournaments (to reflect Joined / Full states)
         renderHomeTournaments(latestTournaments, joinedTournamentIds);
 
-        // Update nav dot (priority: red > yellow > green). If multiple categories, red takes precedence.
-        updateMyFightsNavDot({ hasUpcomingOrLive, hasLiveWithCreds, hasCompletedUnseen });
+        // update notification dot (participant statuses might have changed)
+        updateMyFightsDot();
     }, (error) => {
         console.error("Error loading my tournaments:", error);
         showToast("Could not load your tournaments.", true);
@@ -159,97 +144,82 @@ export function initUserUI(userData) {
     document.getElementById('profile-email').value = userData.email;
 
     // Attach listeners
-    initJoinButtonListener();
+    initTournamentsListHandlers();
     initWalletButtons();
     initProfileForms();
     initMyTournamentsTabs();
-
-    // Delegated listeners for copy buttons and OK buttons in My Tournaments
-    initMyTournamentsInteractions();
 }
 
 /**
- * Adds a single event listener to the tournaments list for joining.
+ * Adds event delegation to the tournaments list for join, copy, and OK buttons.
  */
-function initJoinButtonListener() {
-    document.getElementById('tournaments-list').addEventListener('click', (e) => {
-        const joinButton = e.target.closest('.join-btn');
-        if (joinButton && !joinButton.disabled) {
-            const tId = joinButton.dataset.id;
-            const fee = parseFloat(joinButton.dataset.fee);
-            if (confirm(`Join this tournament for ₹${fee}?`)) {
-                handleJoinTournament(tId, fee);
+function initTournamentsListHandlers() {
+    const list = document.getElementById('tournaments-list');
+    if (list) {
+        list.addEventListener('click', (e) => {
+            // Join button
+            const joinButton = e.target.closest('.join-btn');
+            if (joinButton && !joinButton.disabled) {
+                const tId = joinButton.dataset.id;
+                const fee = parseFloat(joinButton.dataset.fee);
+                if (confirm(`Join this tournament for ₹${fee}?`)) {
+                    handleJoinTournament(tId, fee);
+                }
+                return;
             }
-        }
-    });
-}
 
-/**
- * Initialize delegated handlers for "copy" and "OK" buttons in My Tournaments
- */
-function initMyTournamentsInteractions() {
-    const container = document.getElementById('my-tournaments-content');
-    if (!container) return;
-
-    container.addEventListener('click', async (e) => {
-        const copyBtn = e.target.closest('.copy-btn');
-        if (copyBtn) {
-            const type = copyBtn.dataset.copyType;
-            const value = copyBtn.dataset.copyValue;
-            if (value) {
-                copyToClipboard(value);
-                showToast(`${type === 'room' ? 'Room ID' : 'Password'} copied to clipboard.`, false);
+            // Copy button (Room ID / Password copies)
+            const copyBtn = e.target.closest('.copy-btn');
+            if (copyBtn) {
+                const toCopy = copyBtn.dataset.copy || '';
+                if (toCopy) {
+                    navigator.clipboard.writeText(toCopy).then(() => {
+                        showToast('Copied to clipboard.');
+                    }).catch((err) => {
+                        console.error('Clipboard write failed:', err);
+                        showToast('Could not copy to clipboard.', true);
+                    });
+                } else {
+                    showToast('Nothing to copy.', true);
+                }
+                return;
             }
-            return;
-        }
-
-        const okBtn = e.target.closest('.ok-btn');
-        if (okBtn) {
-            const participantId = okBtn.dataset.participantId;
-            if (!participantId) return;
-            // Update participant doc seen:true
-            try {
-                showLoader();
-                const pRef = doc(db, "participants", participantId);
-                await updateDoc(pRef, { seen: true });
-                showToast("Marked as seen.", false);
-            } catch (err) {
-                console.error("OK mark error:", err);
-                showToast("Could not mark as seen.", true);
-            } finally {
-                hideLoader();
-            }
-            return;
-        }
-    });
-}
-
-/**
- * Copy helper — tries navigator.clipboard first, falls back to textarea.
- * @param {string} text 
- */
-function copyToClipboard(text) {
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(text).catch(() => {
-            fallbackCopy(text);
         });
-    } else {
-        fallbackCopy(text);
+    }
+
+    // Also handle OK button clicks inside "My Tournaments" completed tab (delegated on the completed container)
+    const completedContainer = document.getElementById('tab-content-completed');
+    if (completedContainer) {
+        completedContainer.addEventListener('click', (e) => {
+            const okBtn = e.target.closest('.ok-btn');
+            if (okBtn) {
+                const participantId = okBtn.dataset.participantId;
+                if (participantId) {
+                    markParticipantSeen(participantId);
+                }
+            }
+        });
     }
 }
-function fallbackCopy(text) {
-    const ta = document.createElement('textarea');
-    ta.value = text;
-    ta.style.position = 'fixed';
-    ta.style.left = '-9999px';
-    document.body.appendChild(ta);
-    ta.select();
+
+/**
+ * Marks a participant doc as seenByUser = true when user clicks OK on completed card.
+ * @param {string} participantId 
+ */
+async function markParticipantSeen(participantId) {
+    showLoader();
     try {
-        document.execCommand('copy');
-    } catch (e) {
-        console.error('Copy fallback failed', e);
+        const pRef = doc(db, "participants", participantId);
+        await updateDoc(pRef, { seenByUser: true });
+        showToast("Marked as seen.", false);
+        // update dot immediately (snapshot will also refresh and call updateMyFightsDot)
+        updateMyFightsDot();
+    } catch (error) {
+        console.error("Mark seen error:", error);
+        showToast("Could not mark as seen.", true);
+    } finally {
+        hideLoader();
     }
-    document.body.removeChild(ta);
 }
 
 /**
@@ -286,8 +256,7 @@ async function handleJoinTournament(tournamentId, entryFee) {
             const current = typeof tData.currentParticipants === 'number' ? tData.currentParticipants : 0;
             if (current >= max) throw new Error("Tournament is already full.");
 
-            // 4. Check if already joined (pre-check outside transaction would be ideal; do a quick read)
-            // We'll do a doc query - this is not inside transaction, but it's okay because the counter protects us.
+            // 4. Check if already joined
             const participantQuery = query(collection(db, "participants"), where("userId", "==", userId), where("tournamentId", "==", tournamentId));
             const existing = await getDocs(participantQuery);
             if (!existing.empty) {
@@ -298,14 +267,13 @@ async function handleJoinTournament(tournamentId, entryFee) {
             // - Update user wallet
             transaction.update(userRef, { walletBalance: currentBalance - entryFee });
             
-            // - Create participant doc (NEW: include seen:false)
+            // - Create participant doc
             transaction.set(participantRef, {
                 userId: userId,
                 username: userDoc.data().username,
                 tournamentId: tournamentId,
                 status: 'Joined',
-                joinedAt: serverTimestamp(),
-                seen: false
+                joinedAt: serverTimestamp()
             });
             
             // - Create transaction doc
@@ -447,24 +415,51 @@ function initMyTournamentsTabs() {
 }
 
 /**
- * Updates the My Fights nav dot based on categories.
- * Priority: red (live with creds) > yellow (upcoming/live) > green (completed unseen)
- * @param {object} flags
+ * Updates the small notification dot on the "My Fights" nav button.
+ * Priority (Option A): RED > YELLOW > GREEN
+ * - RED: Any joined tournament has roomId & roomPassword (i.e., credentials released)
+ * - YELLOW: Any joined tournament in Upcoming or Live (without credentials)
+ * - GREEN: Any joined tournament is Completed AND participant.seenByUser !== true
  */
-function updateMyFightsNavDot(flags) {
+function updateMyFightsDot() {
     const dot = document.getElementById('my-fights-dot');
     if (!dot) return;
-    // Reset
-    dot.className = 'nav-dot';
-    dot.classList.remove('show', 'yellow', 'red', 'green', 'glow');
 
-    if (flags.hasLiveWithCreds) {
-        dot.classList.add('show', 'red');
-    } else if (flags.hasUpcomingOrLive) {
-        dot.classList.add('show', 'yellow');
-    } else if (flags.hasCompletedUnseen) {
-        dot.classList.add('show', 'green');
+    // Evaluate latestJoinedTournaments (array of { participant, tournament })
+    let hasRed = false;
+    let hasYellow = false;
+    let hasGreen = false;
+
+    for (const item of latestJoinedTournaments) {
+        const t = item.tournament || {};
+        const p = item.participant || {};
+        // Red: credentials released
+        if (t.roomId && t.roomPassword) {
+            hasRed = true;
+            break; // highest priority
+        }
+        // Yellow: Upcoming or Live (only if not already red)
+        if (t.status === 'Upcoming' || t.status === 'Live') {
+            hasYellow = true;
+        }
+        // Green: completed and not seen by user
+        if ((t.status === 'Completed' || p.status === 'Completed' || p.status === 'Winner') && p.seenByUser !== true) {
+            hasGreen = true;
+        }
+    }
+
+    // Apply priority: RED > YELLOW > GREEN
+    dot.classList.remove('bg-red-600', 'bg-yellow-400', 'bg-green-400', 'animate-pulse', 'ring-red-400');
+    if (hasRed) {
+        dot.classList.add('bg-red-600', 'animate-pulse', 'ring-red-400');
+        dot.classList.remove('hidden');
+    } else if (hasYellow) {
+        dot.classList.add('bg-yellow-400');
+        dot.classList.remove('hidden');
+    } else if (hasGreen) {
+        dot.classList.add('bg-green-400');
+        dot.classList.remove('hidden');
     } else {
-        // nothing to show
+        dot.classList.add('hidden');
     }
 }
