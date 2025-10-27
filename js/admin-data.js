@@ -275,9 +275,10 @@ async function handleDeclareWinner(e) {
         pSnap.forEach(pDoc => {
             const pRef = doc(db, "participants", pDoc.id);
             if (pDoc.data().userId === winnerUserId) {
-                batch.update(pRef, { status: 'Winner' });
+                // mark winner and mark unseen for users (so they will see green notification)
+                batch.update(pRef, { status: 'Winner', seenByUser: false });
             } else {
-                batch.update(pRef, { status: 'Participated' }); // Or 'Completed'
+                batch.update(pRef, { status: 'Participated', seenByUser: false }); // mark not seen so user can OK it
             }
         });
 
