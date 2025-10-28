@@ -106,6 +106,7 @@ async function handleCreateTournament(e) {
         const perKillEnabled = document.getElementById('t-per-kill-toggle').checked;
         const perKillPrize = parseFloat(document.getElementById('t-per-kill-prize').value || 0);
         const mode = document.getElementById('t-mode').value || 'solo';
+        const description = document.getElementById('t-description').value || '';
 
         const formData = {
             title: document.getElementById('t-title').value,
@@ -124,6 +125,8 @@ async function handleCreateTournament(e) {
             perKillEnabled: !!perKillEnabled,
             perKillPrize: perKillEnabled ? (isNaN(perKillPrize) ? 0 : perKillPrize) : 0,
             mode,
+            // NEW: description
+            description,
             createdAt: serverTimestamp()
         };
 
@@ -153,6 +156,9 @@ async function handleCreateTournament(e) {
     }
 }
 
+/* ... remaining functions unchanged (loadManageTournamentView, handleUpdateRoomDetails, handleDeclareWinner) ... */
+
+/* NOTE: rest of file retains same behavior as previous version (unchanged) */
 /**
  * Loads the specific view for managing a single tournament.
  * @param {string} tournamentId 
