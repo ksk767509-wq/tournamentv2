@@ -101,7 +101,7 @@ export function initUserUI(userData) {
     initMyTournamentsTabs();
 }
 
-/* Delegated handlers: handle join flow via modals, copy, ok */
+/* Delegated handlers: handle join flow via modals, copy, ok, and tourney-card click */
 function attachDelegatedHandlers() {
     document.body.addEventListener('click', async (e) => {
         // JOIN button clicked -> open IGN modal
@@ -138,6 +138,16 @@ function attachDelegatedHandlers() {
             if (pid) markParticipantSeen(pid);
             return;
         }
+
+        // Tournament card clicked (open details) — ensure not triggered by buttons above
+        const card = e.target.closest('.tourney-card');
+        if (card) {
+            const tid = card.dataset.tid;
+            if (tid) {
+                openTournamentDetailModal(tid);
+            }
+            return;
+        }
     }, { passive: false });
 
     // JOIN modal button handlers
@@ -166,6 +176,9 @@ function attachDelegatedHandlers() {
         // call join with slot and ign
         await handleJoinTournament(payload.tournamentId, payload.entryFee, { ign: payload.ign, slot: slotIndex });
     });
+
+    // Tournament detail modal close
+    document.getElementById('detail-close').addEventListener('click', closeTournamentDetailModal);
 }
 
 /* Modal helpers */
@@ -204,7 +217,6 @@ async function openJoinSlotModal(payload) {
             // Show slots 1..max as selectable items
             for (let i = 1; i <= max; i++) {
                 const isTaken = takenSlots.has(i);
-                const color = isTaken ? 'bg-gray-600 text-gray-400' : 'bg-gray-700 text-white';
                 const el = document.createElement('label');
                 el.className = `flex items-center justify-between p-3 rounded ${isTaken ? 'opacity-60' : 'hover:bg-gray-600 cursor-pointer'} `;
                 el.innerHTML = `<div class="text-sm">Slot #${i}</div>
@@ -336,7 +348,6 @@ async function handleJoinTournament(tournamentId, entryFee, options = {}) {
             const current = typeof tDocTx.data().currentParticipants === 'number' ? tDocTx.data().currentParticipants : 0;
             if (current >= max) throw new Error('Tournament is full');
 
-            // if slot specified, ensure slot still free by doing a getDocs (not ideal in tx) — do a last-minute pre-check by reading participants collection outside transaction earlier, we already did that.
             // perform writes
             transaction.update(userRef, { walletBalance: wallet - entryFee });
 
@@ -348,7 +359,8 @@ async function handleJoinTournament(tournamentId, entryFee, options = {}) {
                 tournamentId,
                 status: 'Joined',
                 joinedAt: serverTimestamp(),
-                slot: slot || null
+                slot: slot || null,
+                seenByUser: false
             });
 
             // create transaction doc
@@ -425,7 +437,7 @@ function initMyTournamentsTabs() {
     });
 }
 
-/* My Fights dot logic unchanged but respects status/roomId/seenByUser */
+/* My Fights dot logic */
 function updateMyFightsDot() {
     const dot = document.getElementById('my-fights-dot');
     if (!dot) return;
@@ -442,4 +454,90 @@ function updateMyFightsDot() {
     else if (hasYellow) { dot.classList.add('bg-yellow-400'); dot.classList.remove('hidden'); }
     else if (hasGreen) { dot.classList.add('bg-green-400'); dot.classList.remove('hidden'); }
     else dot.classList.add('hidden');
+}
+
+/* ---------- NEW: Tournament Details modal functions ---------- */
+
+/**
+ * Open tournament detail modal by tournament id.
+ * - loads tournament doc (if not in latestTournaments),
+ * - fetches participants and displays them (IGN & team/slot).
+ */
+export async function openTournamentDetailModal(tournamentId) {
+    showLoader();
+    try {
+        // find tournament locally first
+        let tournament = latestTournaments.find(t => t.id === tournamentId) || null;
+        if (!tournament) {
+            const tRef = doc(db, "tournaments", tournamentId);
+            const tSnap = await getDoc(tRef);
+            if (tSnap.exists()) tournament = { id: tSnap.id, ...tSnap.data() };
+        }
+
+        if (!tournament) { showToast('Tournament not found.', true); hideLoader(); return; }
+
+        // populate header
+        document.getElementById('detail-title').textContent = tournament.title || 'Tournament';
+        const mt = tournament.matchTime && tournament.matchTime.toDate ? tournament.matchTime.toDate().toLocaleString() : (tournament.matchTime ? new Date(tournament.matchTime).toLocaleString() : 'TBD');
+        document.getElementById('detail-meta').textContent = `${tournament.gameName || ''} • ${mt}`;
+
+        // description
+        document.getElementById('detail-description').textContent = tournament.description || 'No description provided by admin.';
+
+        // fetch participants
+        const pColl = collection(db, "participants");
+        const pSnap = await getDocs(query(pColl, where("tournamentId", "==", tournamentId)));
+        const parts = [];
+        pSnap.forEach(s => parts.push({ id: s.id, ...s.data() }));
+
+        // build participants list
+        const container = document.getElementById('detail-participants');
+        if (!parts.length) {
+            container.innerHTML = '<p class="text-gray-400">No participants yet.</p>';
+        } else {
+            container.innerHTML = parts.map(p => {
+                const slotInfo = p.slot ? (() => {
+                    const mode = (tournament.mode || 'solo').toLowerCase();
+                    const slotNum = parseInt(p.slot, 10);
+                    if (mode === 'duo') {
+                        const teamSize = 2;
+                        const teamNo = Math.ceil(slotNum / teamSize);
+                        const slotInTeam = slotNum - (teamNo - 1) * teamSize;
+                        return `T${teamNo}#${slotInTeam}`;
+                    } else if (mode === 'squad') {
+                        const teamSize = 4;
+                        const teamNo = Math.ceil(slotNum / teamSize);
+                        const slotInTeam = slotNum - (teamNo - 1) * teamSize;
+                        return `T${teamNo}#${slotInTeam}`;
+                    } else {
+                        return `#${slotNum}`;
+                    }
+                })() : '';
+                return `<div class="bg-gray-700 p-3 rounded flex items-center justify-between">
+                    <div class="flex items-center gap-3">
+                        <div class="h-8 w-8 rounded-full bg-gray-600 flex items-center justify-center text-sm text-white">${(p.username||'U').charAt(0).toUpperCase()}</div>
+                        <div>
+                            <div class="text-white font-medium">${p.username}</div>
+                            <div class="text-xs text-gray-400">UserID: ${p.userId}</div>
+                        </div>
+                    </div>
+                    <div class="text-sm text-gray-300">${slotInfo}</div>
+                </div>`;
+            }).join('');
+        }
+
+        // show modal
+        document.getElementById('tournament-detail-modal').classList.remove('hidden');
+    } catch (err) {
+        console.error('Open detail error', err);
+        showToast('Could not open tournament details.', true);
+    } finally { hideLoader(); }
+}
+
+function closeTournamentDetailModal() {
+    document.getElementById('tournament-detail-modal').classList.add('hidden');
+    document.getElementById('detail-title').textContent = '';
+    document.getElementById('detail-meta').textContent = '';
+    document.getElementById('detail-description').textContent = '';
+    document.getElementById('detail-participants').innerHTML = '';
 }
