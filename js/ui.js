@@ -17,6 +17,8 @@ export function showToast(message, isError = false) {
 /**
  * Render tournaments on Home. Adds Mode display, per-kill golden badge,
  * and keeps dynamic thin progress bar and join button logic.
+ * - tournaments: array of tournament objects (include id, title, gameName, matchTime, entryFee, prizePool, mode, perKillEnabled, perKillPrize, maxParticipants, currentParticipants)
+ * - joinedSet: Set of tournament ids that the current user has joined (used to show "Joined").
  */
 export function renderHomeTournaments(tournaments, joinedSet = new Set()) {
     const listEl = document.getElementById('tournaments-list');
@@ -48,9 +50,11 @@ export function renderHomeTournaments(tournaments, joinedSet = new Set()) {
         if (isFull) { joinBtnText = 'Full'; joinBtnClass = 'bg-red-600 text-white cursor-not-allowed opacity-90'; joinBtnDisabled = true; }
         else if (userJoined) { joinBtnText = 'Joined'; joinBtnClass = 'bg-yellow-400 text-white'; }
 
-        // Mode label (capitalized) and Per-Kill badge if enabled
+        // Mode label (capitalized) - kept small
         const modeLabel = `<span class="inline-block text-xs px-2 py-0.5 rounded text-gray-300 bg-gray-700 mr-2">${(t.mode || 'solo').toUpperCase()}</span>`;
-        const perKillLabel = t.perKillEnabled ? `<span class="inline-block text-xs px-2 py-0.5 rounded font-semibold" style="color: #FBBF24;">Per Kill ₹${t.perKillPrize}</span>` : '';
+
+        // Per-Kill label (gold) — moved to middle area between Prize and Entry Fee.
+        const perKillLabel = t.perKillEnabled ? `<div class="text-sm font-semibold" style="color:#FBBF24;">Per Kill ₹${t.perKillPrize}</div>` : `<div class="text-sm text-gray-400">&nbsp;</div>`;
 
         // Progress bar markup
         const progressBar = `
@@ -63,14 +67,13 @@ export function renderHomeTournaments(tournaments, joinedSet = new Set()) {
         <div class="bg-gray-800 rounded-lg shadow-lg overflow-hidden">
             ${progressBar}
             <div class="p-5">
-                <div class="flex items-center justify-between mb-3">
+                <div class="flex items-start justify-between mb-3">
                     <div>
                         <h3 class="text-xl font-bold text-white mb-1">${t.title}</h3>
                         <div class="text-sm text-gray-400">${t.gameName} • ${matchTime}</div>
                     </div>
                     <div class="text-right">
                         ${modeLabel}
-                        ${perKillLabel}
                     </div>
                 </div>
 
@@ -79,12 +82,17 @@ export function renderHomeTournaments(tournaments, joinedSet = new Set()) {
                     <span class="text-gray-300"><i class="fas fa-users mr-1 text-indigo-400"></i> ${current}/${max}</span>
                 </div>
 
-                <div class="flex justify-between items-center">
-                    <div>
+                <div class="flex items-center justify-between gap-4">
+                    <div class="flex-1 text-left">
                         <p class="text-xs text-gray-400">Prize Pool</p>
                         <p class="text-lg font-semibold text-green-400">₹${t.prizePool}</p>
                     </div>
-                    <div>
+
+                    <div class="flex-1 text-center">
+                        ${perKillLabel}
+                    </div>
+
+                    <div class="flex-1 text-right">
                         <p class="text-xs text-gray-400">Entry Fee</p>
                         <p class="text-lg font-semibold text-white">₹${t.entryFee}</p>
                     </div>
@@ -105,7 +113,10 @@ export function renderHomeTournaments(tournaments, joinedSet = new Set()) {
 }
 
 /**
- * Renders My Tournaments. Adds "Your slot: #n" badge if participant.slot exists.
+ * Renders My Tournaments. Adds "Your slot" badge:
+ * - solo: "Your slot: #n"
+ * - duo: "Your slot: T{teamNo}#{slotInTeam}" where teamSize = 2
+ * - squad: teamSize = 4.
  */
 export function renderMyTournaments(joinedTournaments) {
     const liveList = document.getElementById('tab-content-live');
@@ -124,8 +135,25 @@ export function renderMyTournaments(joinedTournaments) {
         const p = item.participant;
         const matchTime = t.matchTime && t.matchTime.toDate ? t.matchTime.toDate().toLocaleString() : (t.matchTime ? new Date(t.matchTime).toLocaleString() : 'TBD');
 
-        // slot badge
-        const slotBadge = (p && p.slot) ? `<span class="slot-badge inline-block px-2 py-1 text-xs rounded text-white border border-gray-700">Your slot: #${p.slot}</span>` : '';
+        // slot badge formatting
+        let slotBadge = '';
+        if (p && p.slot) {
+            const slotNum = parseInt(p.slot, 10);
+            const mode = (t.mode || 'solo').toLowerCase();
+            if (mode === 'duo') {
+                const teamSize = 2;
+                const teamNo = Math.ceil(slotNum / teamSize);
+                const slotInTeam = slotNum - (teamNo - 1) * teamSize;
+                slotBadge = `<span class="slot-badge inline-block px-2 py-1 text-xs rounded text-white border border-gray-700">Your slot: T${teamNo}#${slotInTeam}</span>`;
+            } else if (mode === 'squad') {
+                const teamSize = 4;
+                const teamNo = Math.ceil(slotNum / teamSize);
+                const slotInTeam = slotNum - (teamNo - 1) * teamSize;
+                slotBadge = `<span class="slot-badge inline-block px-2 py-1 text-xs rounded text-white border border-gray-700">Your slot: T${teamNo}#${slotInTeam}</span>`;
+            } else {
+                slotBadge = `<span class="slot-badge inline-block px-2 py-1 text-xs rounded text-white border border-gray-700">Your slot: #${slotNum}</span>`;
+            }
+        }
 
         // Room block with copy buttons (if room details exist)
         const roomBlock = (t.status === 'Live' && t.roomId) ? `
@@ -167,7 +195,7 @@ export function renderMyTournaments(joinedTournaments) {
     completedList.innerHTML = completedHtml.length > 0 ? completedHtml.join('') : '<p class="text-gray-400 text-center">No completed tournaments.</p>';
 }
 
-/* Remaining UI functions kept intact (transaction render, admin lists, manage participants, declare form rendering handled elsewhere) */
+/* Remaining UI functions kept intact (transaction render, admin lists, manage participants) */
 
 export function renderTransactionHistory(transactions) {
     const listEl = document.getElementById('transaction-history');
