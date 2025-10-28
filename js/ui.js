@@ -64,7 +64,7 @@ export function renderHomeTournaments(tournaments, joinedSet = new Set()) {
         `;
 
         return `
-        <div class="bg-gray-800 rounded-lg shadow-lg overflow-hidden">
+        <div class="bg-gray-800 rounded-lg shadow-lg overflow-hidden tourney-card" data-tid="${t.id}">
             ${progressBar}
             <div class="p-5">
                 <div class="flex items-start justify-between mb-3">
@@ -117,6 +117,8 @@ export function renderHomeTournaments(tournaments, joinedSet = new Set()) {
  * - solo: "Your slot: #n"
  * - duo: "Your slot: T{teamNo}#{slotInTeam}" where teamSize = 2
  * - squad: teamSize = 4.
+ *
+ * Also for completed tournaments, shows amount user earned (per-kill or winner prize).
  */
 export function renderMyTournaments(joinedTournaments) {
     const liveList = document.getElementById('tab-content-live');
@@ -134,6 +136,16 @@ export function renderMyTournaments(joinedTournaments) {
         const t = item.tournament;
         const p = item.participant;
         const matchTime = t.matchTime && t.matchTime.toDate ? t.matchTime.toDate().toLocaleString() : (t.matchTime ? new Date(t.matchTime).toLocaleString() : 'TBD');
+
+        // compute earned amount if tournament completed / per kill values exist
+        let earnedAmount = 0;
+        if (t.perKillEnabled) {
+            const kills = (p && typeof p.kills === 'number') ? p.kills : 0;
+            earnedAmount = kills * (t.perKillPrize || 0);
+        } else {
+            if (p && p.status === 'Winner') earnedAmount = t.prizePool || 0;
+            else earnedAmount = 0;
+        }
 
         // slot badge formatting
         let slotBadge = '';
@@ -167,8 +179,16 @@ export function renderMyTournaments(joinedTournaments) {
             </div>
         ` : '';
 
+        // Earned badge html (eye catching)
+        const earnedBadge = (t.status === 'Completed') ? `
+            <div class="absolute left-4 top-4">
+                <div class="bg-gray-900 px-3 py-1 rounded text-sm font-semibold text-yellow-300 border border-yellow-600 shadow">${earnedAmount > 0 ? `₹${earnedAmount}` : '₹0'}</div>
+            </div>
+        ` : '';
+
         const cardHtml = `
-        <div class="bg-gray-800 rounded-lg shadow-lg p-5 relative">
+        <div class="bg-gray-800 rounded-lg shadow-lg p-5 relative tourney-card" data-tid="${t.id}">
+            ${earnedBadge}
             <div class="absolute top-4 right-4">${slotBadge}</div>
             <h3 class="text-xl font-bold text-white mb-2">${t.title}</h3>
             <p class="text-sm text-gray-400 mb-3">${t.gameName} • ${matchTime}</p>
@@ -195,7 +215,7 @@ export function renderMyTournaments(joinedTournaments) {
     completedList.innerHTML = completedHtml.length > 0 ? completedHtml.join('') : '<p class="text-gray-400 text-center">No completed tournaments.</p>';
 }
 
-/* Remaining UI functions kept intact (transaction render, admin lists, manage participants) */
+/* Remaining UI functions kept intact (transaction render, admin lists, manage participants, etc.) */
 
 export function renderTransactionHistory(transactions) {
     const listEl = document.getElementById('transaction-history');
