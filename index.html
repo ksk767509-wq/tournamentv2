@@ -2,15 +2,18 @@
 <html lang="en" class="dark">
 <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
     <title>Adept Play</title>
 
     <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
 
     <script type="module">
-        // Initialize Firebase (just to avoid showing keys in multiple files)
+        // Firebase init snippet (kept same)
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+        import { getAuth } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+        import { getFirestore } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
         const firebaseConfig = {
             apiKey: "AIzaSyCK0pS7HaT_Y7Z5Y97QM0LqAkNXEO8VEb0",
             authDomain: "tournamentv2-713ab.firebaseapp.com",
@@ -19,43 +22,22 @@
             messagingSenderId: "546759434595",
             appId: "1:546759434595:web:21218cfe145508a518b356"
         };
-        initializeApp(firebaseConfig);
+
+        const app = initializeApp(firebaseConfig);
     </script>
 
     <style>
-        /* Simple loading spinner */
-        .loader {
-            border-top-color: #3498db;
-            -webkit-animation: spin 1s linear infinite;
-            animation: spin 1s linear infinite;
-        }
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
+        .loader { border-top-color: #3498db; -webkit-animation: spin 1s linear infinite; animation: spin 1s linear infinite; }
+        @keyframes spin { 0%{transform:rotate(0deg)}100%{transform:rotate(360deg)} }
 
-        /* Simple toast notification */
-        #toast-notification {
-            transition: transform 0.3s ease-out, opacity 0.3s ease-out;
-            transform: translateY(100%);
-            opacity: 0;
-        }
-        #toast-notification.show {
-            transform: translateY(0);
-            opacity: 1;
-        }
+        #toast-notification { transition: transform 0.3s ease-out, opacity 0.3s ease-out; transform: translateY(100%); opacity: 0; }
+        #toast-notification.show { transform: translateY(0); opacity: 1; }
 
         /* Modal backdrop */
-        .modal-backdrop {
-            background: rgba(15, 23, 42, 0.75);
-            backdrop-filter: blur(2px);
-        }
+        .modal-backdrop { background: rgba(17, 24, 39, 0.75); }
 
-        /* thin squaricle progress top */
-        .squaricle-top { border-top-left-radius: .5rem; border-top-right-radius: .5rem; height: 6px; }
-
-        /* subtle input focus */
-        .focus-ring:focus { outline: none; box-shadow: 0 0 0 3px rgba(99,102,241,0.12); border-color: rgba(99,102,241,0.6); }
+        /* small badge */
+        .slot-badge { background: linear-gradient(90deg,#111827,#1f2937); border: 1px solid rgba(255,255,255,0.06); }
     </style>
 </head>
 <body class="bg-gray-900 text-gray-200 font-sans antialiased">
@@ -169,17 +151,11 @@
                     <p id="wallet-page-balance" class="text-4xl font-bold text-green-400 my-2">₹0.00</p>
                 </div>
                 <div class="flex gap-4 my-6">
-                    <button id="add-money-btn" class="flex-1 bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-lg">
-                        <i class="fas fa-plus-circle mr-2"></i>Add ₹100
-                    </button>
-                    <button id="withdraw-money-btn" class="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-3 rounded-lg">
-                        <i class="fas fa-minus-circle mr-2"></i>Withdraw ₹50
-                    </button>
+                    <button id="add-money-btn" class="flex-1 bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-lg"><i class="fas fa-plus-circle mr-2"></i>Add ₹100</button>
+                    <button id="withdraw-money-btn" class="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-3 rounded-lg"><i class="fas fa-minus-circle mr-2"></i>Withdraw ₹50</button>
                 </div>
                 <h3 class="text-xl font-semibold text-white mb-3">Transaction History</h3>
-                <div id="transaction-history" class="space-y-2">
-                    <p class="text-gray-400">Loading transactions...</p>
-                </div>
+                <div id="transaction-history" class="space-y-2"><p class="text-gray-400">Loading transactions...</p></div>
             </section>
 
             <section id="profile-section" class="app-view p-4 hidden">
@@ -205,34 +181,18 @@
                     <button type="submit" class="w-full bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-3 rounded-lg">Change Password</button>
                 </form>
 
-                <button id="logout-btn" class="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 rounded-lg mt-8">
-                    <i class="fas fa-sign-out-alt mr-2"></i>Logout
-                </button>
+                <button id="logout-btn" class="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 rounded-lg mt-8"><i class="fas fa-sign-out-alt mr-2"></i>Logout</button>
             </section>
 
             <section id="admin-dashboard-section" class="app-view p-4 hidden">
                 <h2 class="text-2xl font-bold text-white mb-4">Admin Dashboard</h2>
                 <div class="grid grid-cols-2 gap-4 mb-6">
-                    <div class="bg-gray-800 p-4 rounded-lg text-center">
-                        <p class="text-sm text-gray-400">Total Users</p>
-                        <p id="admin-stats-users" class="text-2xl font-bold">0</p>
-                    </div>
-                    <div class="bg-gray-800 p-4 rounded-lg text-center">
-                        <p class="text-sm text-gray-400">Total Tournaments</p>
-                        <p id="admin-stats-tournaments" class="text-2xl font-bold">0</p>
-                    </div>
-                    <div class="bg-gray-800 p-4 rounded-lg text-center">
-                        <p class="text-sm text-gray-400">Prize Distributed</p>
-                        <p id="admin-stats-prize" class="text-2xl font-bold">₹0</p>
-                    </div>
-                    <div class="bg-gray-800 p-4 rounded-lg text-center">
-                        <p class="text-sm text-gray-400">Total Revenue</p>
-                        <p id="admin-stats-revenue" class="text-2xl font-bold">₹0</p>
-                    </div>
+                    <div class="bg-gray-800 p-4 rounded-lg text-center"><p class="text-sm text-gray-400">Total Users</p><p id="admin-stats-users" class="text-2xl font-bold">0</p></div>
+                    <div class="bg-gray-800 p-4 rounded-lg text-center"><p class="text-sm text-gray-400">Total Tournaments</p><p id="admin-stats-tournaments" class="text-2xl font-bold">0</p></div>
+                    <div class="bg-gray-800 p-4 rounded-lg text-center"><p class="text-sm text-gray-400">Prize Distributed</p><p id="admin-stats-prize" class="text-2xl font-bold">₹0</p></div>
+                    <div class="bg-gray-800 p-4 rounded-lg text-center"><p class="text-sm text-gray-400">Total Revenue</p><p id="admin-stats-revenue" class="text-2xl font-bold">₹0</p></div>
                 </div>
-                <button id="go-to-create-tournament-btn" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-lg">
-                    <i class="fas fa-plus mr-2"></i>Create New Tournament
-                </button>
+                <button id="go-to-create-tournament-btn" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-lg"><i class="fas fa-plus mr-2"></i>Create New Tournament</button>
                 <h3 class="text-xl font-semibold text-white mt-6 mb-3">All Tournaments</h3>
                 <div id="admin-tournaments-list" class="space-y-3"></div>
             </section>
@@ -243,24 +203,24 @@
                 <form id="create-tournament-form" class="bg-gray-800 p-6 rounded-lg space-y-4">
                     <input type="text" id="t-title" placeholder="Tournament Title" required class="w-full bg-gray-700 p-3 rounded-lg">
                     <input type="text" id="t-game-name" placeholder="Game Name (e.g., BGMI)" required class="w-full bg-gray-700 p-3 rounded-lg">
-                    <input type="datetime-local" id="t-match-time" required class="w-full bg-gray-700 p-3 rounded-lg text-gray-400">
-                    <input type="number" id="t-entry-fee" placeholder="Entry Fee (e.g., 50)" required class="w-full bg-gray-700 p-3 rounded-lg">
-                    <input type="number" id="t-prize-pool" placeholder="Prize Pool (e.g., 800)" required class="w-full bg-gray-700 p-3 rounded-lg">
-                    <input type="number" id="t-commission" placeholder="Commission % (e.g., 20)" required class="w-full bg-gray-700 p-3 rounded-lg">
-                    <input type="number" id="t-max-participants" placeholder="Max Participants (e.g., 100)" required min="2" class="w-full bg-gray-700 p-3 rounded-lg">
-
-                    <!-- Mode select -->
-                    <div>
-                        <label class="block text-sm text-gray-300 mb-1">Mode</label>
-                        <select id="t-mode" class="w-full bg-gray-700 p-3 rounded-lg">
+                    <div class="grid grid-cols-2 gap-2">
+                        <input type="datetime-local" id="t-match-time" required class="w-full bg-gray-700 p-3 rounded-lg text-gray-400">
+                        <select id="t-mode" class="w-full bg-gray-700 p-3 rounded-lg" aria-label="Game Mode">
                             <option value="solo">Solo</option>
                             <option value="duo">Duo</option>
                             <option value="squad">Squad</option>
                         </select>
-                        <p id="mode-warning" class="text-xs text-red-400 mt-1 hidden"></p>
                     </div>
+                    <input type="number" id="t-entry-fee" placeholder="Entry Fee (e.g., 50)" required class="w-full bg-gray-700 p-3 rounded-lg">
+                    <input type="number" id="t-prize-pool" placeholder="Prize Pool (e.g., 800)" required class="w-full bg-gray-700 p-3 rounded-lg">
+                    <input type="number" id="t-commission" placeholder="Commission % (e.g., 20)" required class="w-full bg-gray-700 p-3 rounded-lg">
 
-                    <!-- Per-Kill toggle and per-kill prize -->
+                    <!-- New field: Max Participants -->
+                    <input type="number" id="t-max-participants" placeholder="Max Participants (e.g., 100)" required min="2" class="w-full bg-gray-700 p-3 rounded-lg">
+
+                    <p id="mode-validation-msg" class="text-sm text-red-400 hidden"></p>
+
+                    <!-- Per-Kill toggle and per-kill prize (new) -->
                     <div class="flex items-center gap-4">
                         <label class="flex items-center gap-2">
                             <input id="t-per-kill-toggle" type="checkbox" class="h-5 w-5">
@@ -287,9 +247,7 @@
                     <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg">Update Room</button>
                 </form>
 
-                <form id="declare-winner-form" class="bg-gray-800 p-6 rounded-lg space-y-4">
-                    <!-- Rendered dynamically by JS -->
-                </form>
+                <form id="declare-winner-form" class="bg-gray-800 p-6 rounded-lg space-y-4"></form>
 
                 <h3 class="text-xl font-semibold text-white mt-6 mb-3">Participants</h3>
                 <div id="manage-t-participants-list" class="space-y-2"></div>
@@ -314,7 +272,7 @@
                 <i class="fas fa-user text-xl"></i>
                 <span class="text-xs font-medium">Profile</span>
             </button>
-             <button id="admin-nav-btn" data-view="admin-dashboard-section" class="nav-btn flex flex-col items-center justify-center text-gray-400 w-1/5 hidden">
+            <button id="admin-nav-btn" data-view="admin-dashboard-section" class="nav-btn flex flex-col items-center justify-center text-gray-400 w-1/5 hidden">
                 <i class="fas fa-shield-halved text-xl"></i>
                 <span class="text-xs font-medium">Admin</span>
             </button>
@@ -322,59 +280,73 @@
     </div>
 </div>
 
-<!-- Join modal (single modal with steps) -->
-<div id="join-modal" class="fixed inset-0 z-50 hidden items-center justify-center modal-backdrop">
-    <div class="w-11/12 max-w-md bg-gray-800 rounded-xl shadow-xl overflow-hidden">
-        <div id="join-modal-body" class="p-4">
-            <!-- content injected by JS -->
+<!-- JOIN MODAL: Step 1 (IGN input) -->
+<div id="join-ign-modal" class="fixed inset-0 hidden z-50 flex items-center justify-center modal-backdrop">
+    <div class="max-w-md w-11/12 bg-gray-800 rounded-lg p-6 shadow-lg">
+        <h3 class="text-lg font-semibold text-white mb-2" id="join-ign-title">Join Tournament</h3>
+        <p class="text-sm text-gray-400 mb-4" id="join-ign-sub">Enter your In-Game Name</p>
+        <input id="join-ign-input" type="text" placeholder="Your In-game Name" class="w-full bg-gray-700 p-3 rounded-lg text-white mb-4" />
+        <div class="flex gap-3">
+             <button id="join-ign-next" class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-lg">Next</button>
+            <button id="join-ign-cancel" class="flex-1 bg-gray-600 hover:bg-gray-500 text-white font-bold py-3 rounded-lg">Cancel</button>
         </div>
-        <div class="p-4 bg-gray-900 flex justify-between">
-            <button id="join-modal-cancel" class="px-4 py-2 bg-gray-700 hover:bg-gray-700/90 rounded text-white">Cancel</button>
-            <div>
-                <button id="join-modal-prev" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 rounded text-white mr-2 hidden">Back</button>
-                <button id="join-modal-next" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 rounded text-white">Next</button>
-                <button id="join-modal-confirm" class="px-4 py-2 bg-green-600 hover:bg-green-700 rounded text-white hidden">Join Now</button>
-            </div>
+    </div>
+</div>
+
+<!-- SLOT SELECT MODAL: Step 2 (choose slot) -->
+<div id="join-slot-modal" class="fixed inset-0 hidden z-50 flex items-center justify-center modal-backdrop">
+    <div class="max-w-md w-11/12 bg-gray-800 rounded-lg p-4 shadow-lg">
+        <h3 class="text-lg font-semibold text-white mb-2" id="join-slot-title">Choose Slot</h3>
+        <p class="text-sm text-gray-400 mb-3" id="join-slot-sub">Pick an available slot / team position</p>
+        <div id="join-slot-container" class="grid gap-2 max-h-64 overflow-y-auto mb-4"></div>
+        <div class="flex gap-3">
+            <button id="join-confirm-btn" class="flex-1 bg-green-600 disabled:opacity-60 disabled:cursor-not-allowed text-white font-bold py-3 rounded-lg" disabled>Join Now</button>
+            <button id="join-slot-cancel" class="flex-1 bg-gray-600 hover:bg-gray-500 text-white font-bold py-3 rounded-lg">Cancel</button>
         </div>
     </div>
 </div>
 
 <script>
-    // small DOM logic for toggling per-kill input visibility on the create form
-    document.addEventListener('DOMContentLoaded', () => {
-        const perKillToggle = document.getElementById('t-per-kill-toggle');
-        const perKillWrapper = document.getElementById('per-kill-prize-wrapper');
-        const modeSelect = document.getElementById('t-mode');
-        const maxEl = document.getElementById('t-max-participants');
-        const modeWarning = document.getElementById('mode-warning');
+/* Toggling per-kill input, and mode live validation message */
+document.addEventListener('DOMContentLoaded', () => {
+    const perKillToggle = document.getElementById('t-per-kill-toggle');
+    const perKillWrapper = document.getElementById('per-kill-prize-wrapper');
+    const tMode = document.getElementById('t-mode');
+    const maxInp = document.getElementById('t-max-participants');
+    const modeMsg = document.getElementById('mode-validation-msg');
 
-        if (perKillToggle && perKillWrapper) {
-            perKillToggle.addEventListener('change', () => {
-                perKillWrapper.classList.toggle('hidden', !perKillToggle.checked);
-            });
+    if (perKillToggle && perKillWrapper) {
+        perKillToggle.addEventListener('change', () => {
+            perKillWrapper.classList.toggle('hidden', !perKillToggle.checked);
+        });
+    }
+
+    function validateMode() {
+        const mode = tMode.value;
+        const max = parseInt(maxInp.value || '0', 10);
+        modeMsg.classList.add('hidden');
+        if (!max || max < 2) return true;
+        if (mode === 'duo' && (max % 2 !== 0)) {
+            modeMsg.textContent = `Duo mode requires max participants divisible by 2. Remainder: ${max % 2}`;
+            modeMsg.classList.remove('hidden');
+            return false;
         }
-
-        // validate mode on change
-        function validateMode() {
-            const mode = modeSelect.value;
-            const max = parseInt(maxEl.value || '0', 10);
-            modeWarning.classList.add('hidden');
-            if (mode === 'duo' && max % 2 !== 0) {
-                modeWarning.textContent = 'For Duo, max participants must be divisible by 2.';
-                modeWarning.classList.remove('hidden');
-                return false;
-            } else if (mode === 'squad' && max % 4 !== 0) {
-                modeWarning.textContent = 'For Squad, max participants must be divisible by 4.';
-                modeWarning.classList.remove('hidden');
-                return false;
-            }
-            return true;
+        if (mode === 'squad' && (max % 4 !== 0)) {
+            modeMsg.textContent = `Squad mode requires max participants divisible by 4. Remainder: ${max % 4}`;
+            modeMsg.classList.remove('hidden');
+            return false;
         }
-        modeSelect.addEventListener('change', validateMode);
-        maxEl.addEventListener('input', validateMode);
-    });
+        return true;
+    }
 
-    // Keep selection disabled, but allow input and click events
+    tMode.addEventListener('change', validateMode);
+    maxInp.addEventListener('input', validateMode);
+
+    // When form submits we rely on client-side validateMode but server-side (admin-data.js) will enforce too.
+});
+</script>
+
+<script>
     document.addEventListener('contextmenu', event => event.preventDefault());
     document.onselectstart = function() { return false; }
     document.addEventListener('gesturestart', function (e) { e.preventDefault(); });
