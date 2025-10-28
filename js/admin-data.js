@@ -16,13 +16,14 @@ import { showLoader, hideLoader, showToast, renderAdminTournaments, renderManage
 import { navigateTo } from "./router.js";
 
 let adminListeners = [];
-let currentManagingTournament = { id: null, prizePool: 0, perKillEnabled: false, perKillPrize: 0 };
+let currentManagingTournament = { id: null, prizePool: 0, perKillEnabled: false, perKillPrize: 0, mode: 'solo' };
 
 /**
- * Initialize admin listeners (same as before)
+ * Initializes all admin-specific listeners.
  */
 export function initAdminListeners() {
     if (!window.currentUser || !window.currentUser.isAdmin) return;
+
     clearAdminListeners();
 
     const usersRef = collection(db, "users");
@@ -56,75 +57,89 @@ export function initAdminListeners() {
     });
 
     adminListeners = [unsubUsers, unsubTourneys];
+
     initAdminUI();
 }
 
+/**
+ * Clears all active admin listeners.
+ */
 export function clearAdminListeners() {
-    adminListeners.forEach(u => u());
+    adminListeners.forEach(unsub => unsub());
     adminListeners = [];
     if (currentManagingTournament.unsub) currentManagingTournament.unsub();
     if (currentManagingTournament.unsubParts) currentManagingTournament.unsubParts();
-    currentManagingTournament = { id: null, prizePool: 0, perKillEnabled: false, perKillPrize: 0 };
+    currentManagingTournament = { id: null, prizePool: 0, perKillEnabled: false, perKillPrize: 0, mode: 'solo' };
 }
 
+/**
+ * Initializes listeners for admin forms and buttons.
+ */
 function initAdminUI() {
+    // Create Tournament Form
     document.getElementById('create-tournament-form').addEventListener('submit', handleCreateTournament);
+
+    // Manage Tournament button listener (delegated)
     document.getElementById('admin-tournaments-list').addEventListener('click', (e) => {
         const manageBtn = e.target.closest('.manage-t-btn');
-        if (manageBtn) loadManageTournamentView(manageBtn.dataset.id);
+        if (manageBtn) {
+            loadManageTournamentView(manageBtn.dataset.id);
+        }
     });
-    document.getElementById('update-room-form').addEventListener('submit', handleUpdateRoomDetails);
-    document.getElementById('declare-winner-form').addEventListener('submit', handleDeclareWinner);
 
-    // enable distribute button when kills inputs filled handled previously in a listener in earlier version
+    // Update Room Details Form
+    document.getElementById('update-room-form').addEventListener('submit', handleUpdateRoomDetails);
+
+    // Declare Winner Form (submit delegated)
+    document.getElementById('declare-winner-form').addEventListener('submit', handleDeclareWinner);
 }
 
+/**
+ * Handles creation of a new tournament.
+ * @param {Event} e 
+ */
 async function handleCreateTournament(e) {
     e.preventDefault();
     showLoader();
+
     try {
-        const title = document.getElementById('t-title').value;
-        const gameName = document.getElementById('t-game-name').value;
-        const matchTime = new Date(document.getElementById('t-match-time').value);
-        const entryFee = parseFloat(document.getElementById('t-entry-fee').value);
-        const prizePool = parseFloat(document.getElementById('t-prize-pool').value);
-        const commissionRate = parseFloat(document.getElementById('t-commission').value);
-        const maxParticipants = parseInt(document.getElementById('t-max-participants').value, 10) || 0;
         const perKillEnabled = document.getElementById('t-per-kill-toggle').checked;
         const perKillPrize = parseFloat(document.getElementById('t-per-kill-prize').value || 0);
         const mode = document.getElementById('t-mode').value || 'solo';
 
-        // Validate "mode" vs maxParticipants:
-        if (mode === 'duo' && (maxParticipants % 2 !== 0)) {
-            const remainder = maxParticipants % 2;
-            showToast(`Duo requires max participants divisible by 2. Remainder: ${remainder}`, true);
-            hideLoader();
-            return;
-        }
-        if (mode === 'squad' && (maxParticipants % 4 !== 0)) {
-            const remainder = maxParticipants % 4;
-            showToast(`Squad requires max participants divisible by 4. Remainder: ${remainder}`, true);
-            hideLoader();
-            return;
-        }
-        // All good — create tournament
         const formData = {
-            title,
-            gameName,
-            matchTime,
-            entryFee,
-            prizePool,
-            commissionRate,
+            title: document.getElementById('t-title').value,
+            gameName: document.getElementById('t-game-name').value,
+            matchTime: new Date(document.getElementById('t-match-time').value),
+            entryFee: parseFloat(document.getElementById('t-entry-fee').value),
+            prizePool: parseFloat(document.getElementById('t-prize-pool').value),
+            commissionRate: parseFloat(document.getElementById('t-commission').value),
             status: 'Upcoming',
             roomId: '',
             roomPassword: '',
-            maxParticipants,
+            // NEW: participant limits
+            maxParticipants: parseInt(document.getElementById('t-max-participants').value, 10) || 100,
             currentParticipants: 0,
+            // NEW: per-kill
             perKillEnabled: !!perKillEnabled,
             perKillPrize: perKillEnabled ? (isNaN(perKillPrize) ? 0 : perKillPrize) : 0,
             mode,
             createdAt: serverTimestamp()
         };
+
+        // Validate for duo/squad divisibility
+        if (formData.mode === 'duo' && (formData.maxParticipants % 2 !== 0)) {
+            const remainder = formData.maxParticipants % 2;
+            showToast(`Duo requires max participants divisible by 2. Remainder: ${remainder}`, true);
+            hideLoader();
+            return;
+        }
+        if (formData.mode === 'squad' && (formData.maxParticipants % 4 !== 0)) {
+            const remainder = formData.maxParticipants % 4;
+            showToast(`Squad requires max participants divisible by 4. Remainder: ${remainder}`, true);
+            hideLoader();
+            return;
+        }
 
         await addDoc(collection(db, "tournaments"), formData);
         showToast("Tournament created successfully!", false);
@@ -138,10 +153,15 @@ async function handleCreateTournament(e) {
     }
 }
 
+/**
+ * Loads the specific view for managing a single tournament.
+ * @param {string} tournamentId 
+ */
 function loadManageTournamentView(tournamentId) {
     currentManagingTournament.id = tournamentId;
     navigateTo('manage-tournament-section');
 
+    // Clear old listeners if any
     if (currentManagingTournament.unsub) currentManagingTournament.unsub();
     if (currentManagingTournament.unsubParts) currentManagingTournament.unsubParts();
 
@@ -150,29 +170,34 @@ function loadManageTournamentView(tournamentId) {
     currentManagingTournament.unsub = onSnapshot(tDocRef, (docSnap) => {
         if (docSnap.exists()) {
             const t = docSnap.data();
-            currentManagingTournament.prizePool = t.prizePool;
+            currentManagingTournament.prizePool = t.prizePool; // Store prize for winner logic
             currentManagingTournament.perKillEnabled = !!t.perKillEnabled;
             currentManagingTournament.perKillPrize = t.perKillPrize || 0;
             currentManagingTournament.mode = t.mode || 'solo';
             document.getElementById('manage-t-title').textContent = `Manage: ${t.title}`;
             document.getElementById('manage-t-room-id').value = t.roomId || '';
             document.getElementById('manage-t-room-pass').value = t.roomPassword || '';
-            if (t.status === 'Completed') document.getElementById('declare-winner-form').classList.add('opacity-50', 'pointer-events-none');
-            else document.getElementById('declare-winner-form').classList.remove('opacity-50', 'pointer-events-none');
+
+            // Disable winner form if already completed
+            if (t.status === 'Completed') {
+                document.getElementById('declare-winner-form').classList.add('opacity-50', 'pointer-events-none');
+            } else {
+                document.getElementById('declare-winner-form').classList.remove('opacity-50', 'pointer-events-none');
+            }
         }
     });
 
     // Listen to participants
     const pCollRef = collection(db, "participants");
     const q = query(pCollRef, where("tournamentId", "==", tournamentId));
-    currentManagingTournament.unsubParts = onSnapshot(q, (querySnapshot) => {
+    currentManagingTournament.unsubParts = onSnapshot(q, async (querySnapshot) => {
         const participants = [];
-        querySnapshot.forEach(docSnap => participants.push({ id: docSnap.id, ...docSnap.data() }));
+        querySnapshot.forEach(docSnap => {
+            participants.push({ id: docSnap.id, ...docSnap.data() });
+        });
         renderManageParticipants(participants);
 
         // Build the declare/distribute UI depending on perKillEnabled
-        // We'll build dynamic HTML directly here so admin can input kills per participant for per-kill mode,
-        // or select a winner for normal mode.
         const form = document.getElementById('declare-winner-form');
         if (!form) return;
         form.innerHTML = '';
@@ -214,6 +239,31 @@ function loadManageTournamentView(tournamentId) {
             btnRow.innerHTML = `<button id="distribute-per-kill-btn" type="submit" class="w-full bg-indigo-600 disabled:opacity-60 disabled:cursor-not-allowed text-white font-bold py-3 rounded" disabled>Distribute Prize</button>`;
             form.appendChild(btnRow);
 
+            // --- NEW: attach input listeners to enable the distribute button when all kill inputs have valid values ---
+            const distributeBtn = form.querySelector('#distribute-per-kill-btn');
+            const killInputs = Array.from(form.querySelectorAll('.kill-input'));
+
+            const validateKillInputs = () => {
+                if (!distributeBtn) return;
+                if (killInputs.length === 0) {
+                    distributeBtn.disabled = true;
+                    return;
+                }
+                const allValid = killInputs.every(inp => {
+                    // treat empty string as invalid; zeros are valid
+                    const v = inp.value;
+                    if (v === '' || v === null || v === undefined) return false;
+                    const n = parseInt(v, 10);
+                    return !isNaN(n) && n >= 0;
+                });
+                distributeBtn.disabled = !allValid;
+            };
+
+            // attach listeners
+            killInputs.forEach(inp => inp.addEventListener('input', validateKillInputs));
+            // initial validation (in case inputs had defaults)
+            validateKillInputs();
+
         } else {
             const label = document.createElement('label');
             label.className = 'block text-sm text-gray-300 mb-1 px-2';
@@ -234,43 +284,55 @@ function loadManageTournamentView(tournamentId) {
     });
 }
 
+/**
+ * Handles updating the Room ID and Password for a tournament.
+ * @param {Event} e 
+ */
 async function handleUpdateRoomDetails(e) {
     e.preventDefault();
     if (!currentManagingTournament.id) return;
+
     const roomId = document.getElementById('manage-t-room-id').value;
     const roomPassword = document.getElementById('manage-t-room-pass').value;
+
     showLoader();
     try {
         const tDocRef = doc(db, "tournaments", currentManagingTournament.id);
-        await updateDoc(tDocRef, { roomId, roomPassword, status: 'Live' });
+        await updateDoc(tDocRef, {
+            roomId: roomId,
+            roomPassword: roomPassword,
+            status: 'Live'
+        });
         showToast("Room details updated. Tournament is now LIVE.", false);
     } catch (error) {
         console.error("Update room error:", error);
         showToast(error.message || 'Error updating room', true);
-    } finally { hideLoader(); }
+    } finally {
+        hideLoader();
+    }
 }
 
 /**
- * Declare winner (supports per-kill or normal)
+ * Handles declaring a winner and distributing the prize.
+ * Supports both per-kill and normal flow.
+ * @param {Event} e 
  */
 async function handleDeclareWinner(e) {
     e.preventDefault();
     if (!currentManagingTournament.id) return;
 
-    // Detect mode by form contents
     const form = document.getElementById('declare-winner-form');
     if (!form) return;
 
-    // If per-kill: inputs with class kill-input exist
+    // PER-KILL FLOW (if kill inputs exist & perKillEnabled)
     const killInputs = form.querySelectorAll('.kill-input');
     if (killInputs && killInputs.length > 0 && currentManagingTournament.perKillEnabled) {
-        // Same per-kill implementation as before — collect kills and commit batch
-        // Validate inputs
+        // validate inputs
         const killsMap = {};
         for (const inp of killInputs) {
             const pid = inp.dataset.participantId;
             if (!pid) { showToast('Invalid participant input.', true); return; }
-            if (inp.value === '') { showToast('Enter kills for all participants.', true); return; }
+            if (inp.value === '' || inp.value === null || inp.value === undefined) { showToast('Enter kills for all participants.', true); return; }
             const k = parseInt(inp.value, 10);
             if (isNaN(k) || k < 0) { showToast('Kills must be non-negative integers.', true); return; }
             killsMap[pid] = k;
@@ -279,94 +341,111 @@ async function handleDeclareWinner(e) {
         showLoader();
         try {
             const batch = writeBatch(db);
-            const tRef = doc(db, "tournaments", currentManagingTournament.id);
-            batch.update(tRef, { status: 'Completed' });
+
+            // update tournament status
+            const tournamentRef = doc(db, "tournaments", currentManagingTournament.id);
+            batch.update(tournamentRef, { status: 'Completed' });
 
             // get participants
-            const pColl = collection(db, "participants");
-            const pSnap = await getDocs(query(pColl, where("tournamentId", "==", currentManagingTournament.id)));
+            const pCollRef = collection(db, "participants");
+            const pSnap = await getDocs(query(pCollRef, where("tournamentId", "==", currentManagingTournament.id)));
+
+            // compute max kills
             let maxKills = -1;
-            const parts = [];
-            pSnap.forEach(docSnap => {
-                const data = docSnap.data();
-                parts.push({ id: docSnap.id, ref: doc(db, "participants", docSnap.id), data });
-                const k = killsMap[docSnap.id] || 0;
+            const participantDocs = [];
+            pSnap.forEach(pDoc => {
+                participantDocs.push({ id: pDoc.id, ref: doc(db, "participants", pDoc.id), data: pDoc.data() });
+                const k = killsMap[pDoc.id] || 0;
                 if (k > maxKills) maxKills = k;
             });
 
-            for (const p of parts) {
-                const kills = killsMap[p.id] || 0;
+            for (const p of participantDocs) {
+                const pid = p.id;
+                const pdata = p.data;
+                const kills = killsMap[pid] || 0;
                 const amount = kills * (currentManagingTournament.perKillPrize || 0);
+
                 const newStatus = (maxKills > 0 && kills === maxKills) ? 'Winner' : 'Completed';
-                batch.update(p.ref, { status: newStatus, seenByUser: false, kills });
+                batch.update(p.ref, { status: newStatus, seenByUser: false, kills: kills });
+
                 if (amount > 0) {
-                    const userRef = doc(db, "users", p.data.userId);
+                    const userRef = doc(db, "users", pdata.userId);
                     batch.update(userRef, { walletBalance: increment(amount) });
+
                     const txRef = doc(collection(db, "transactions"));
                     batch.set(txRef, {
-                        userId: p.data.userId,
-                        amount,
+                        userId: pdata.userId,
+                        amount: amount,
                         type: 'credit',
-                        description: `Per-kill prize (${kills} kills) - ${p.data.username} - ${document.getElementById('manage-t-title').textContent}`,
+                        description: `Per-kill prize (${kills} kills) - ${pdata.username} - ${document.getElementById('manage-t-title').textContent}`,
                         createdAt: serverTimestamp()
                     });
                 }
             }
 
             await batch.commit();
-            showToast('Per-kill prizes distributed!', false);
+            showToast('Per-kill prizes distributed successfully!', false);
             navigateTo('admin-dashboard-section');
-        } catch (err) {
-            console.error('Per-kill distribution error', err);
-            showToast(err.message || 'Error distributing per-kill prizes', true);
-        } finally { hideLoader(); }
+        } catch (error) {
+            console.error('Per-kill distribution error:', error);
+            showToast(error.message || 'Error distributing per-kill prizes.', true);
+        } finally {
+            hideLoader();
+        }
+
         return;
     }
 
-    // otherwise old winner selection flow
+    // NORMAL WINNER SELECTION FLOW
     const select = document.getElementById('participant-winner-select');
-    if (!select) { showToast('No winner select found.', true); return; }
+    if (!select) { showToast('Winner select not found.', true); return; }
     const winnerUserId = select.value;
     if (!winnerUserId) { showToast('Please select a winner.', true); return; }
 
     showLoader();
     try {
         const batch = writeBatch(db);
-        const tRef = doc(db, "tournaments", currentManagingTournament.id);
 
-        // fetch prizePool from tournament
-        const tSnap = await getDocs(query(collection(db, "tournaments"), where("__name__", "==", currentManagingTournament.id)));
-        let prizePool = currentManagingTournament.prizePool || 0;
-        // update winner wallet
-        batch.update(doc(db, "users", winnerUserId), { walletBalance: increment(prizePool) });
+        // read prizePool (fallback to stored)
+        const prizePool = currentManagingTournament.prizePool || 0;
+
+        // credit winner
+        const winnerUserRef = doc(db, "users", winnerUserId);
+        batch.update(winnerUserRef, { walletBalance: increment(prizePool) });
+
         // transaction
-        const txRef = doc(collection(db, "transactions"));
-        batch.set(txRef, {
+        const transactionRef = doc(collection(db, "transactions"));
+        batch.set(transactionRef, {
             userId: winnerUserId,
             amount: prizePool,
             type: 'credit',
             description: `Prize money for ${document.getElementById('manage-t-title').textContent}`,
             createdAt: serverTimestamp()
         });
-        batch.update(tRef, { status: 'Completed' });
 
-        // update participants statuses
-        const pColl = collection(db, "participants");
-        const pSnap = await getDocs(query(pColl, where("tournamentId", "==", currentManagingTournament.id)));
-        pSnap.forEach(docSnap => {
-            const pRef = doc(db, "participants", docSnap.id);
-            if (docSnap.data().userId === winnerUserId) batch.update(pRef, { status: 'Winner', seenByUser: false });
-            else batch.update(pRef, { status: 'Completed', seenByUser: false });
+        // update tournament & participants
+        const tDocRef = doc(db, "tournaments", currentManagingTournament.id);
+        batch.update(tDocRef, { status: 'Completed' });
+
+        const pCollRef = collection(db, "participants");
+        const pSnap = await getDocs(query(pCollRef, where("tournamentId", "==", currentManagingTournament.id)));
+
+        pSnap.forEach(pDoc => {
+            const pRef = doc(db, "participants", pDoc.id);
+            if (pDoc.data().userId === winnerUserId) {
+                batch.update(pRef, { status: 'Winner', seenByUser: false });
+            } else {
+                batch.update(pRef, { status: 'Completed', seenByUser: false });
+            }
         });
 
         await batch.commit();
         showToast('Winner declared and prize distributed!', false);
         navigateTo('admin-dashboard-section');
-
-    } catch (err) {
-        console.error('Declare winner error', err);
-        showToast(err.message || 'Error declaring winner', true);
-    } finally { hideLoader(); }
-}
-
-export { initAdminUI }; // not strictly necessary but ok
+    } catch (error) {
+        console.error("Declare winner error:", error);
+        showToast(error.message || 'Error declaring winner', true);
+    } finally {
+        hideLoader();
+    }
+            }
