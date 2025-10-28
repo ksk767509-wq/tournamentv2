@@ -38,6 +38,10 @@
 
         /* small badge */
         .slot-badge { background: linear-gradient(90deg,#111827,#1f2937); border: 1px solid rgba(255,255,255,0.06); }
+
+        /* clickable card hover */
+        .tourney-card { cursor: pointer; }
+        .tourney-card:hover { box-shadow: 0 10px 20px rgba(0,0,0,0.5); transform: translateY(-2px); transition: all .15s ease; }
     </style>
 </head>
 <body class="bg-gray-900 text-gray-200 font-sans antialiased">
@@ -232,6 +236,9 @@
                         <p class="text-xs text-gray-400">When enabled, prize pool acts as showcase only; payouts = kills × per-kill prize.</p>
                     </div>
 
+                    <!-- New: Description -->
+                    <textarea id="t-description" placeholder="Tournament description (rules/details) - visible to users" class="w-full bg-gray-700 p-3 rounded-lg text-gray-200 h-28" ></textarea>
+
                     <button type="submit" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-lg">Create Tournament</button>
                 </form>
             </section>
@@ -287,7 +294,7 @@
         <p class="text-sm text-gray-400 mb-4" id="join-ign-sub">Enter your In-Game Name</p>
         <input id="join-ign-input" type="text" placeholder="Your In-game Name" class="w-full bg-gray-700 p-3 rounded-lg text-white mb-4" />
         <div class="flex gap-3">
-             <button id="join-ign-next" class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-lg">Next</button>
+            <button id="join-ign-next" class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-lg">Next</button>
             <button id="join-ign-cancel" class="flex-1 bg-gray-600 hover:bg-gray-500 text-white font-bold py-3 rounded-lg">Cancel</button>
         </div>
     </div>
@@ -302,6 +309,29 @@
         <div class="flex gap-3">
             <button id="join-confirm-btn" class="flex-1 bg-green-600 disabled:opacity-60 disabled:cursor-not-allowed text-white font-bold py-3 rounded-lg" disabled>Join Now</button>
             <button id="join-slot-cancel" class="flex-1 bg-gray-600 hover:bg-gray-500 text-white font-bold py-3 rounded-lg">Cancel</button>
+        </div>
+    </div>
+</div>
+
+<!-- TOURNAMENT DETAILS MODAL (opened when user clicks a card) -->
+<div id="tournament-detail-modal" class="fixed inset-0 hidden z-50 flex items-start justify-center modal-backdrop pt-20 pb-10">
+    <div class="max-w-lg w-11/12 bg-gray-800 rounded-lg p-5 shadow-lg overflow-y-auto max-h-[80vh]">
+        <div class="flex items-center justify-between mb-3">
+            <div>
+                <h3 id="detail-title" class="text-xl font-bold text-white"></h3>
+                <p id="detail-meta" class="text-sm text-gray-400"></p>
+            </div>
+            <button id="detail-close" class="bg-gray-700 hover:bg-gray-600 text-white p-2 rounded"><i class="fas fa-arrow-left"></i></button>
+        </div>
+
+        <div class="mb-4">
+            <h4 class="text-sm text-gray-300 mb-1">Description</h4>
+            <p id="detail-description" class="text-sm text-gray-200 bg-gray-900 p-3 rounded"></p>
+        </div>
+
+        <div>
+            <h4 class="text-sm text-gray-300 mb-2">Participants</h4>
+            <div id="detail-participants" class="space-y-2"></div>
         </div>
     </div>
 </div>
@@ -341,8 +371,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     tMode.addEventListener('change', validateMode);
     maxInp.addEventListener('input', validateMode);
-
-    // When form submits we rely on client-side validateMode but server-side (admin-data.js) will enforce too.
 });
 </script>
 
