@@ -1,10 +1,10 @@
-import {
-    doc,
-    collection,
-    query,
-    where,
-    onSnapshot,
-    orderBy,
+import { 
+    doc, 
+    collection, 
+    query, 
+    where, 
+    onSnapshot, 
+    orderBy, 
     runTransaction,
     addDoc,
     getDoc,
@@ -15,7 +15,7 @@ import {
     writeBatch
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { auth, db } from "./firebase-config.js";
-import { showLoader, hideLoader, showToast, renderHomeTournaments, renderMyTournaments, renderTransactionHistory } from "./ui.js";
+import { showLoader, hideLoader, showToast, renderHomeTournaments, renderMyTournaments, renderTransactionHistory, showTournamentDetailScreen, hideTournamentDetailScreen, renderMySlotPopup, hideMySlotPopup, formatDateTime12 } from "./ui.js";
 import { handleChangePassword } from "./auth.js";
 
 let listeners = [];
@@ -24,11 +24,12 @@ let joinedTournamentIds = new Set();
 let latestJoinedTournaments = [];
 let handlersAttached = false;
 
+/* Initialize listeners (wallet, tournaments, participants, transactions) */
 export function initUserListeners(userId) {
     clearUserListeners();
     latestTournaments = [];
-    joinedTournamentIds = new Set();
     latestJoinedTournaments = [];
+    joinedTournamentIds = new Set();
 
     const userDocRef = doc(db, "users", userId);
     const unsubWallet = onSnapshot(userDocRef, (docSnap) => {
@@ -42,34 +43,50 @@ export function initUserListeners(userId) {
     });
 
     const tourneysRef = collection(db, "tournaments");
-    const qTourneys = query(tourneysRef, where("status", "==", "Upcoming"), orderBy("matchTime", "asc"));
+    const qTourneys = query(tourneysRef, orderBy("matchTime", "asc"));
+    // Listen to all tournaments (Upcoming/Live/Completed) for detail screen access
     const unsubTourneys = onSnapshot(qTourneys, (querySnapshot) => {
         const tournaments = [];
         querySnapshot.forEach(docSnap => tournaments.push({ id: docSnap.id, ...docSnap.data() }));
-        latestTournaments = tournaments;
-        renderHomeTournaments(latestTournaments, joinedTournamentIds);
+        latestTournaments = tournaments.filter(t => t.status === 'Upcoming' || t.status === 'Live' || t.status === 'Completed');
+        // render only upcoming for home
+        const upcoming = latestTournaments.filter(t => t.status === 'Upcoming');
+        renderHomeTournaments(upcoming, joinedTournamentIds);
         updateMyFightsDot();
-    }, (error) => { console.error("Error loading tournaments:", error); showToast("Could not load tournaments.", true); });
+    }, (error) => {
+        console.error("Error loading tournaments:", error);
+        showToast("Could not load tournaments.", true);
+    });
 
     const participantsRef = collection(db, "participants");
     const qMyTournaments = query(participantsRef, where("userId", "==", userId));
     const unsubMyTournaments = onSnapshot(qMyTournaments, async (querySnapshot) => {
-        const joinedTournaments = [];
+        const joined = [];
         const promises = [];
         joinedTournamentIds = new Set();
         querySnapshot.forEach((pDoc) => {
             const participant = { id: pDoc.id, ...pDoc.data() };
             if (participant.tournamentId) joinedTournamentIds.add(participant.tournamentId);
             const tDocRef = doc(db, "tournaments", participant.tournamentId);
-            promises.push(getDoc(tDocRef).then(tDoc => { if (tDoc.exists()) joinedTournaments.push({ participant, tournament: { id: tDoc.id, ...tDoc.data() } }); }));
+            promises.push(getDoc(tDocRef).then(tDoc => { if (tDoc.exists()) joined.push({ participant, tournament: { id: tDoc.id, ...tDoc.data() } }); }));
         });
         await Promise.all(promises);
-        joinedTournaments.sort((a,b) => b.tournament.matchTime - a.tournament.matchTime);
-        latestJoinedTournaments = joinedTournaments;
-        renderMyTournaments(joinedTournaments);
-        renderHomeTournaments(latestTournaments, joinedTournamentIds);
+        // sort by matchTime desc
+        joined.sort((a,b) => {
+            const at = a.tournament.matchTime ? (a.tournament.matchTime.toDate ? a.tournament.matchTime.toDate().getTime() : new Date(a.tournament.matchTime).getTime()) : 0;
+            const bt = b.tournament.matchTime ? (b.tournament.matchTime.toDate ? b.tournament.matchTime.toDate().getTime() : new Date(b.tournament.matchTime).getTime()) : 0;
+            return bt - at;
+        });
+        latestJoinedTournaments = joined;
+        renderMyTournaments(joined);
+        // update home tournaments with joined set
+        const upcoming = latestTournaments.filter(t => t.status === 'Upcoming');
+        renderHomeTournaments(upcoming, joinedTournamentIds);
         updateMyFightsDot();
-    }, (error) => { console.error("Error loading my tournaments:", error); showToast("Could not load your tournaments.", true); });
+    }, (error) => {
+        console.error("Error loading my tournaments:", error);
+        showToast("Could not load your tournaments.", true);
+    });
 
     const transactionsRef = collection(db, "transactions");
     const qTransactions = query(transactionsRef, where("userId", "==", userId), orderBy("createdAt", "desc"));
@@ -77,7 +94,10 @@ export function initUserListeners(userId) {
         const transactions = [];
         querySnapshot.forEach(docSnap => transactions.push({ id: docSnap.id, ...docSnap.data() }));
         renderTransactionHistory(transactions);
-    }, (error) => { console.error("Error loading transactions:", error); showToast("Could not load transactions.", true); });
+    }, (error) => {
+        console.error("Error loading transactions:", error);
+        showToast("Could not load transactions.", true);
+    });
 
     listeners = [unsubWallet, unsubTourneys, unsubMyTournaments, unsubTransactions];
 
@@ -87,12 +107,13 @@ export function initUserListeners(userId) {
     }
 }
 
+/* Clear all listeners */
 export function clearUserListeners() {
     listeners.forEach(unsub => unsub());
     listeners = [];
 }
 
-/* UI initialization */
+/* UI init for profile and others */
 export function initUserUI(userData) {
     document.getElementById('profile-username').value = userData.username;
     document.getElementById('profile-email').value = userData.email;
@@ -101,10 +122,10 @@ export function initUserUI(userData) {
     initMyTournamentsTabs();
 }
 
-/* Delegated handlers: handle join flow via modals, copy, ok, and tourney-card click */
+/* Delegated event handler for page - join, copy, ok, tourney-card click, detail-screen controls */
 function attachDelegatedHandlers() {
     document.body.addEventListener('click', async (e) => {
-        // JOIN button clicked -> open IGN modal
+        // Join button clicked
         const joinButton = e.target.closest('.join-btn');
         if (joinButton && !joinButton.disabled) {
             const tId = joinButton.dataset.id;
@@ -115,7 +136,7 @@ function attachDelegatedHandlers() {
             return;
         }
 
-        // COPY button
+        // Copy buttons
         const copyBtn = e.target.closest('.copy-btn');
         if (copyBtn) {
             const toCopy = copyBtn.dataset.copy || '';
@@ -139,18 +160,18 @@ function attachDelegatedHandlers() {
             return;
         }
 
-        // Tournament card clicked (open details) — ensure not triggered by buttons above
+        // Click on a tournament card (open full-screen detail)
         const card = e.target.closest('.tourney-card');
         if (card) {
             const tid = card.dataset.tid;
             if (tid) {
-                openTournamentDetailModal(tid);
+                openTournamentDetailScreen(tid);
             }
             return;
         }
     }, { passive: false });
 
-    // JOIN modal button handlers
+    /* Join modal handlers */
     document.getElementById('join-ign-next').addEventListener('click', () => {
         const ign = document.getElementById('join-ign-input').value.trim();
         const payloadStr = document.getElementById('join-ign-modal').dataset.payload;
@@ -163,7 +184,6 @@ function attachDelegatedHandlers() {
     });
     document.getElementById('join-ign-cancel').addEventListener('click', closeJoinIGNModal);
 
-    // Slot modal handlers
     document.getElementById('join-slot-cancel').addEventListener('click', closeJoinSlotModal);
     document.getElementById('join-confirm-btn').addEventListener('click', async () => {
         const payloadStr = document.getElementById('join-slot-modal').dataset.payload;
@@ -173,15 +193,77 @@ function attachDelegatedHandlers() {
         if (!selected) { showToast('Select a slot', true); return; }
         const slotIndex = parseInt(selected.value, 10);
         closeJoinSlotModal();
-        // call join with slot and ign
         await handleJoinTournament(payload.tournamentId, payload.entryFee, { ign: payload.ign, slot: slotIndex });
     });
 
-    // Tournament detail modal close
-    document.getElementById('detail-close').addEventListener('click', closeTournamentDetailModal);
+    /* Detail screen controls: back, show participants, my-slot, join, my-slot popup close */
+    document.getElementById('detail-back').addEventListener('click', () => {
+        hideTournamentDetailScreen();
+    });
+
+    document.getElementById('detail-show-participants').addEventListener('click', (e) => {
+        const list = document.getElementById('detail-participants-list');
+        const btn = document.getElementById('detail-show-participants');
+        if (list.classList.contains('hidden')) {
+            list.classList.remove('hidden');
+            btn.textContent = 'Hide Participants';
+        } else {
+            list.classList.add('hidden');
+            btn.textContent = 'Show Participants';
+        }
+    });
+
+    document.getElementById('detail-my-slot-btn').addEventListener('click', () => {
+        const screen = document.getElementById('tournament-detail-screen');
+        const participantsJson = screen.dataset.participants || '[]';
+        const participants = JSON.parse(participantsJson);
+        const curUser = auth.currentUser ? auth.currentUser.uid : null;
+        const myPart = participants.find(p => p.userId === curUser);
+        if (!myPart) {
+            renderMySlotPopup(null, []);
+            return;
+        }
+        // compute teammates based on mode and slot
+        const tournamentMode = screen.dataset.mode || 'solo';
+        const slotNum = myPart.slot ? parseInt(myPart.slot, 10) : null;
+        let teammates = [];
+        if (slotNum) {
+            if (tournamentMode === 'solo') {
+                teammates = []; // no teammates
+            } else {
+                const teamSize = tournamentMode === 'duo' ? 2 : 4;
+                const teamNo = Math.ceil(slotNum / teamSize);
+                teammates = participants.filter(p => {
+                    if (!p.slot) return false;
+                    const s = parseInt(p.slot, 10);
+                    return Math.ceil(s / teamSize) === teamNo && p.userId !== curUser;
+                });
+            }
+        }
+        renderMySlotPopup(myPart, teammates);
+    });
+
+    document.getElementById('my-slot-close').addEventListener('click', () => {
+        hideMySlotPopup();
+    });
+
+    // Join button inside detail screen should open the IGN -> slot flow
+    document.getElementById('detail-join-btn').addEventListener('click', () => {
+        const screen = document.getElementById('tournament-detail-screen');
+        const tid = screen.dataset.tid;
+        const perKill = screen.dataset.perKill === '1';
+        const mode = screen.dataset.mode || 'solo';
+        // find tournament entryFee from latestTournaments
+        const tournament = latestTournaments.find(t => t.id === tid) || null;
+        const fee = tournament ? (tournament.entryFee || 0) : 0;
+        const max = tournament ? (tournament.maxParticipants || 0) : 0;
+        openJoinIGNModal({ tournamentId: tid, entryFee: fee, mode, max });
+    });
+
+    // copy button & ok buttons are handled earlier in delegated handler above
 }
 
-/* Modal helpers */
+/* ---------------- Modal helpers for Join (unchanged) ---------------- */
 function openJoinIGNModal(payload) {
     document.getElementById('join-ign-input').value = '';
     const m = document.getElementById('join-ign-modal');
@@ -190,10 +272,9 @@ function openJoinIGNModal(payload) {
     document.getElementById('join-ign-sub').textContent = 'Enter your In-game Name';
     m.classList.remove('hidden');
 }
-function closeJoinIGNModal() { document.getElementById('join-ign-modal').classList.add('hidden'); document.getElementById('join-ign-modal').removeAttribute('data-payload'); }
+function closeJoinIGNModal() { const m = document.getElementById('join-ign-modal'); m.classList.add('hidden'); m.removeAttribute('data-payload'); }
 
 async function openJoinSlotModal(payload) {
-    // payload: { tournamentId, entryFee, mode, max, ign }
     const container = document.getElementById('join-slot-container');
     container.innerHTML = '<p class="text-gray-400">Loading slots...</p>';
     const modal = document.getElementById('join-slot-modal');
@@ -201,30 +282,25 @@ async function openJoinSlotModal(payload) {
     document.getElementById('join-slot-title').textContent = 'Choose Slot';
     document.getElementById('join-slot-sub').textContent = 'Pick an available slot / team position';
 
-    // fetch participants for this tournament to see taken slots
     try {
         const pColl = collection(db, "participants");
         const pSnap = await getDocs(query(pColl, where("tournamentId", "==", payload.tournamentId)));
         const takenSlots = new Set();
         pSnap.forEach(snap => { const data = snap.data(); if (data.slot) takenSlots.add(data.slot); });
 
-        // Build slot UI depending on mode
         const max = parseInt(payload.max || 0, 10) || 0;
-        container.innerHTML = ''; // clear
+        container.innerHTML = '';
         const mode = payload.mode || 'solo';
 
         if (mode === 'solo') {
-            // Show slots 1..max as selectable items
             for (let i = 1; i <= max; i++) {
                 const isTaken = takenSlots.has(i);
                 const el = document.createElement('label');
-                el.className = `flex items-center justify-between p-3 rounded ${isTaken ? 'opacity-60' : 'hover:bg-gray-600 cursor-pointer'} `;
-                el.innerHTML = `<div class="text-sm">Slot #${i}</div>
-                    <input type="radio" name="slot-select" value="${i}" ${isTaken ? 'disabled' : ''} />`;
+                el.className = `flex items-center justify-between p-3 rounded ${isTaken ? 'opacity-60' : 'hover:bg-gray-600 cursor-pointer'}`;
+                el.innerHTML = `<div class="text-sm">Slot #${i}</div><input type="radio" name="slot-select" value="${i}" ${isTaken ? 'disabled' : ''} />`;
                 container.appendChild(el);
             }
         } else {
-            // duo -> teams (max/2 teams) each with 2 slots, squad -> teams (max/4) each with 4 slots
             const teamSize = mode === 'duo' ? 2 : 4;
             const teams = Math.floor(max / teamSize);
             for (let t=1; t<=teams; t++) {
@@ -250,16 +326,12 @@ async function openJoinSlotModal(payload) {
             }
         }
 
-        // enable/disable confirm button based on radio selection
         const confirmBtn = document.getElementById('join-confirm-btn');
         confirmBtn.disabled = true;
         modal.classList.remove('hidden');
 
-        // delegate change
         container.querySelectorAll('input[name="slot-select"]').forEach(i => {
-            i.addEventListener('change', () => {
-                confirmBtn.disabled = false;
-            });
+            i.addEventListener('change', () => { confirmBtn.disabled = false; });
         });
 
     } catch (err) {
@@ -276,13 +348,12 @@ function closeJoinSlotModal() {
     document.getElementById('join-confirm-btn').disabled = true;
 }
 
-/* mark participant seen (ok button) */
+/* mark participant seen */
 async function markParticipantSeen(participantId) {
     showLoader();
     try {
         const pRef = doc(db, "participants", participantId);
         await updateDoc(pRef, { seenByUser: true });
-        // optimistic UI update: rerender local cache
         latestJoinedTournaments = latestJoinedTournaments.map(item => {
             if (item.participant && item.participant.id === participantId) {
                 return { participant: { ...item.participant, seenByUser: true }, tournament: item.tournament };
@@ -298,11 +369,7 @@ async function markParticipantSeen(participantId) {
     } finally { hideLoader(); }
 }
 
-/**
- * JOIN tournament with optional slot & ign
- * - pre-check slot availability
- * - then transaction to debit and create participant with slot and username
- */
+/* JOIN flow using transaction - updated to accept slot & ign */
 async function handleJoinTournament(tournamentId, entryFee, options = {}) {
     showLoader();
     const user = auth.currentUser;
@@ -312,19 +379,17 @@ async function handleJoinTournament(tournamentId, entryFee, options = {}) {
     const slot = options.slot || null;
 
     try {
-        // pre-check: participant duplicate
+        // check duplicate
         const alreadyQ = query(collection(db, "participants"), where("userId","==",userId), where("tournamentId","==",tournamentId));
         const alreadySnap = await getDocs(alreadyQ);
         if (!alreadySnap.empty) { showToast('You have already joined this tournament.', true); hideLoader(); return; }
 
-        // pre-check slot if slot provided
         if (slot) {
             const slotQ = query(collection(db, "participants"), where("tournamentId","==",tournamentId), where("slot","==",slot));
             const slotSnap = await getDocs(slotQ);
             if (!slotSnap.empty) { showToast('Selected slot already taken. Please choose another.', true); hideLoader(); return; }
         }
 
-        // fetch tournament doc
         const tRef = doc(db, "tournaments", tournamentId);
         const tSnap = await getDoc(tRef);
         if (!tSnap.exists()) { showToast('Tournament not found.', true); hideLoader(); return; }
@@ -332,7 +397,7 @@ async function handleJoinTournament(tournamentId, entryFee, options = {}) {
         if (tData.status !== 'Upcoming') { showToast('Tournament is no longer available.', true); hideLoader(); return; }
 
         const userRef = doc(db, "users", userId);
-        // run transaction to debit and create participant and increment currentParticipants
+
         await runTransaction(db, async (transaction) => {
             const uDoc = await transaction.get(userRef);
             if (!uDoc.exists()) throw new Error('User doc missing');
@@ -340,7 +405,6 @@ async function handleJoinTournament(tournamentId, entryFee, options = {}) {
             const wallet = uDoc.data().walletBalance;
             if (wallet < entryFee) throw new Error('Insufficient Balance');
 
-            // double-check tournament doc within transaction
             const tDocTx = await transaction.get(tRef);
             if (!tDocTx.exists()) throw new Error('Tournament not found in tx');
             if (tDocTx.data().status !== 'Upcoming') throw new Error('Tournament is not open');
@@ -348,10 +412,8 @@ async function handleJoinTournament(tournamentId, entryFee, options = {}) {
             const current = typeof tDocTx.data().currentParticipants === 'number' ? tDocTx.data().currentParticipants : 0;
             if (current >= max) throw new Error('Tournament is full');
 
-            // perform writes
             transaction.update(userRef, { walletBalance: wallet - entryFee });
 
-            // create participant doc with slot and ign
             const partRef = doc(collection(db, "participants"));
             transaction.set(partRef, {
                 userId,
@@ -363,8 +425,7 @@ async function handleJoinTournament(tournamentId, entryFee, options = {}) {
                 seenByUser: false
             });
 
-            // create transaction doc
-            const txRef = doc(collection(db, "transactions"));
+             const txRef = doc(collection(db, "transactions"));
             transaction.set(txRef, {
                 userId,
                 amount: entryFee,
@@ -373,7 +434,6 @@ async function handleJoinTournament(tournamentId, entryFee, options = {}) {
                 createdAt: serverTimestamp()
             });
 
-            // increment tournament currentParticipants
             transaction.update(tRef, { currentParticipants: (current + 1) });
         });
 
@@ -384,12 +444,11 @@ async function handleJoinTournament(tournamentId, entryFee, options = {}) {
     } finally { hideLoader(); }
 }
 
-/* Wallet, profile forms, tabs (unchanged) */
+/* Wallet / profile / tabs (unchanged) */
 function initWalletButtons() {
     document.getElementById('add-money-btn').addEventListener('click', () => handleSimulatedTransaction(100, 'credit', 'Simulated deposit'));
     document.getElementById('withdraw-money-btn').addEventListener('click', () => handleSimulatedTransaction(50, 'debit', 'Simulated withdrawal'));
 }
-
 async function handleSimulatedTransaction(amount, type, description) {
     const user = auth.currentUser;
     if (!user) return;
@@ -456,14 +515,8 @@ function updateMyFightsDot() {
     else dot.classList.add('hidden');
 }
 
-/* ---------- NEW: Tournament Details modal functions ---------- */
-
-/**
- * Open tournament detail modal by tournament id.
- * - loads tournament doc (if not in latestTournaments),
- * - fetches participants and displays them (IGN & team/slot).
- */
-export async function openTournamentDetailModal(tournamentId) {
+/* ---------- Full-screen tournament detail open/close ---------- */
+async function openTournamentDetailScreen(tournamentId) {
     showLoader();
     try {
         // find tournament locally first
@@ -473,71 +526,31 @@ export async function openTournamentDetailModal(tournamentId) {
             const tSnap = await getDoc(tRef);
             if (tSnap.exists()) tournament = { id: tSnap.id, ...tSnap.data() };
         }
-
         if (!tournament) { showToast('Tournament not found.', true); hideLoader(); return; }
-
-        // populate header
-        document.getElementById('detail-title').textContent = tournament.title || 'Tournament';
-        const mt = tournament.matchTime && tournament.matchTime.toDate ? tournament.matchTime.toDate().toLocaleString() : (tournament.matchTime ? new Date(tournament.matchTime).toLocaleString() : 'TBD');
-        document.getElementById('detail-meta').textContent = `${tournament.gameName || ''} • ${mt}`;
-
-        // description
-        document.getElementById('detail-description').textContent = tournament.description || 'No description provided by admin.';
 
         // fetch participants
         const pColl = collection(db, "participants");
         const pSnap = await getDocs(query(pColl, where("tournamentId", "==", tournamentId)));
-        const parts = [];
-        pSnap.forEach(s => parts.push({ id: s.id, ...s.data() }));
+        const participants = [];
+        pSnap.forEach(s => participants.push({ id: s.id, ...s.data() }));
 
-        // build participants list
-        const container = document.getElementById('detail-participants');
-        if (!parts.length) {
-            container.innerHTML = '<p class="text-gray-400">No participants yet.</p>';
-        } else {
-            container.innerHTML = parts.map(p => {
-                const slotInfo = p.slot ? (() => {
-                    const mode = (tournament.mode || 'solo').toLowerCase();
-                    const slotNum = parseInt(p.slot, 10);
-                    if (mode === 'duo') {
-                        const teamSize = 2;
-                        const teamNo = Math.ceil(slotNum / teamSize);
-                        const slotInTeam = slotNum - (teamNo - 1) * teamSize;
-                        return `T${teamNo}#${slotInTeam}`;
-                    } else if (mode === 'squad') {
-                        const teamSize = 4;
-                        const teamNo = Math.ceil(slotNum / teamSize);
-                        const slotInTeam = slotNum - (teamNo - 1) * teamSize;
-                        return `T${teamNo}#${slotInTeam}`;
-                    } else {
-                        return `#${slotNum}`;
-                    }
-                })() : '';
-                return `<div class="bg-gray-700 p-3 rounded flex items-center justify-between">
-                    <div class="flex items-center gap-3">
-                        <div class="h-8 w-8 rounded-full bg-gray-600 flex items-center justify-center text-sm text-white">${(p.username||'U').charAt(0).toUpperCase()}</div>
-                        <div>
-                            <div class="text-white font-medium">${p.username}</div>
-                            <div class="text-xs text-gray-400">UserID: ${p.userId}</div>
-                        </div>
-                    </div>
-                    <div class="text-sm text-gray-300">${slotInfo}</div>
-                </div>`;
-            }).join('');
-        }
+        // determine if current user is admin
+        const userIsAdmin = window.currentUser && window.currentUser.isAdmin;
 
-        // show modal
-        document.getElementById('tournament-detail-modal').classList.remove('hidden');
+        // find current user's participant object if exists
+        const currentUserId = auth.currentUser ? auth.currentUser.uid : null;
+        const currentUserParticipant = participants.find(p => p.userId === currentUserId) || null;
+
+        // show via UI helper
+        showTournamentDetailScreen(tournament, participants, userIsAdmin, currentUserParticipant);
+
     } catch (err) {
         console.error('Open detail error', err);
         showToast('Could not open tournament details.', true);
     } finally { hideLoader(); }
 }
 
-function closeTournamentDetailModal() {
-    document.getElementById('tournament-detail-modal').classList.add('hidden');
-    document.getElementById('detail-title').textContent = '';
-    document.getElementById('detail-meta').textContent = '';
-    document.getElementById('detail-description').textContent = '';
-    document.getElementById('detail-participants').innerHTML = '';
-}
+/* Expose small helpers for other modules */
+export { openTournamentDetailScreen };
+
+/* ---------------- end of file ---------------- */
