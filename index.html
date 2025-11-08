@@ -5,7 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>Adept Play</title>
 
+    <!-- Tailwind (kept) -->
     <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Fonts: Poppins for headings, Inter for body -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Poppins:wght@600;700;800&display=swap" rel="stylesheet">
+
+    <!-- Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
 
     <script type="module">
@@ -29,52 +35,245 @@
     </script>
 
     <style>
-        /* Simple loading spinner */
-        .loader {
-            border-top-color: #3498db;
-            -webkit-animation: spin 1s linear infinite;
-            animation: spin 1s linear infinite;
-        }
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
+        /**
+         * PROFESSIONAL DARK GAMING THEME
+         * - Fonts: Poppins (headings), Inter (body)
+         * - Accent: electric blue (#00A9FF)
+         * - Dark charcoal backgrounds, elevated card surfaces
+         * - Subtle animations and hover micro-interactions
+         *
+         * IMPORTANT: keeps IDs and classes intact so JS keeps working.
+         */
+
+        :root{
+            --bg: #0f1720;           /* deep charcoal background */
+            --card: #151a1f;         /* secondary card background */
+            --muted-card: #111417;   /* slightly darker card */
+            --accent: #00A9FF;       /* electric blue primary accent */
+            --accent-600: rgba(0,169,255,0.14);
+            --danger: #FF4B4B;       /* red for destructive actions (withdraw) */
+            --text: #E6EEF8;         /* light body text */
+            --muted: #9AA8B8;        /* secondary text */
+            --glass: rgba(255,255,255,0.03);
+            --radius: 12px;
+            --transition-fast: 160ms;
+            --transition: 260ms;
         }
 
-        /* Simple toast notification */
+        /* Base typography and body */
+        html,body {
+            height: 100%;
+        }
+        body {
+            margin: 0;
+            background: linear-gradient(180deg, var(--bg) 0%, #0b1116 100%);
+            color: var(--text);
+            font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            -webkit-tap-highlight-color: transparent;
+            transition: background var(--transition-fast) ease;
+        }
+
+        /* Headings: Poppins */
+        h1,h2,h3,h4,h5 {
+            font-family: "Poppins", "Inter", sans-serif;
+            color: #FFFFFF;
+            letter-spacing: -0.01em;
+        }
+        h1 { font-size: 2.1rem; font-weight:800; }
+        h2 { font-size: 1.45rem; font-weight:700; }
+        h3 { font-size: 1.15rem; font-weight:600; }
+
+        /* Tailwind background color overrides (dark surfaces) */
+        .bg-gray-900 { background-color: var(--bg) !important; }
+        .bg-gray-800 { background-color: linear-gradient(180deg, var(--card), #0f1418) !important; }
+        .bg-gray-700 { background-color: var(--muted-card) !important; }
+
+        /* Text color tweaks */
+        .text-gray-200 { color: var(--text) !important; }
+        .text-gray-300 { color: var(--muted) !important; }
+        .text-gray-400 { color: rgba(170,190,205,0.8) !important; }
+
+        /* Accent mapping for primary CTAs */
+        .bg-indigo-600, .bg-green-600, .bg-blue-600 {
+            background-color: var(--accent) !important;
+            color: #00121a !important;
+            box-shadow: 0 6px 18px rgba(0,169,255,0.12);
+            transition: transform var(--transition-fast), box-shadow var(--transition-fast), filter var(--transition-fast);
+        }
+        .hover\:bg-indigo-700:hover, .hover\:bg-green-700:hover, .hover\:bg-blue-700:hover {
+            filter: brightness(1.05) !important;
+            transform: translateY(-3px) !important;
+            box-shadow: 0 16px 40px rgba(0,169,255,0.12) !important;
+        }
+
+        /* Danger (withdraw) keep red to retain semantic meaning */
+        .bg-red-600 { background-color: var(--danger) !important; color: #fff !important; }
+        .hover\:bg-red-700:hover { filter: brightness(1.03) !important; transform: translateY(-2px) !important; }
+
+        /* Buttons: unify shape */
+        button {
+            border-radius: 10px;
+            font-weight: 600;
+            letter-spacing: 0.01em;
+        }
+        .rounded-lg { border-radius: 10px !important; }
+
+        /* Inputs & textareas */
+        input[type="text"], input[type="email"], input[type="password"], input[type="number"], textarea, select {
+            background: linear-gradient(180deg, #0e1316, #0a0e11);
+            border: 1px solid rgba(255,255,255,0.04);
+            color: var(--text);
+            padding: 12px 14px;
+            border-radius: 10px;
+            transition: box-shadow var(--transition), border-color var(--transition);
+            outline: none;
+            font-family: "Inter", sans-serif;
+        }
+        textarea { min-height: 100px; resize: vertical; }
+        input:focus, select:focus, textarea:focus {
+            border-color: rgba(0,169,255,0.95);
+            box-shadow: 0 8px 30px rgba(0,169,255,0.08), 0 0 0 4px rgba(0,169,255,0.06);
+        }
+
+        /* Card defaults */
+        .shadow-lg { box-shadow: 0 8px 30px rgba(2,6,23,0.6) !important; }
+
+        /* Tournament card appearance & hover lift */
+        .tourney-card {
+            background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+            border-radius: 12px;
+            border: 1px solid rgba(255,255,255,0.03);
+            transition: transform var(--transition-fast), box-shadow var(--transition-fast), border-color var(--transition-fast);
+            position: relative;
+            overflow: hidden;
+        }
+        .tourney-card:hover {
+            transform: translateY(-6px);
+            box-shadow: 0 20px 50px rgba(2,6,23,0.7);
+            border-color: rgba(0,169,255,0.12);
+        }
+
+        /* Participant progress squaricle indicator (thin outline) */
+        .participant-progress {
+            width: 64px;
+            height: 36px;
+            border-radius: 8px;
+            border: 1px solid rgba(255,255,255,0.04);
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            font-size:12px;
+            font-weight:600;
+        }
+        .progress-stage-1 { background: linear-gradient(180deg,#6b21a8,#5b1893); color: #fff; } /* purple */
+        .progress-stage-2 { background: linear-gradient(180deg,#eab308,#f59e0b); color: #000; } /* yellow */
+        .progress-stage-3 { background: linear-gradient(180deg,#ff7a00,#ff4b00); color: #000; } /* orange */
+        .progress-full { background: linear-gradient(90deg,#ff4b4b,#ff1f1f); color: #fff; box-shadow: 0 0 12px rgba(255,75,75,0.18); }
+
+        /* Join button state override visuals (ensure good contrast) */
+        .join-btn {
+            border-radius: 10px;
+            font-weight: 700;
+            transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+        }
+        .join-btn:active { transform: translateY(1px); }
+        .join-btn[disabled] { opacity: 0.85; cursor: not-allowed; transform: none !important; box-shadow: none !important; }
+
+        /* Small "Your slot" badge */
+        .slot-badge {
+            display:inline-block;
+            padding:6px 10px;
+            border-radius:999px;
+            background: linear-gradient(90deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+            border: 1px solid rgba(255,255,255,0.03);
+            font-weight:700;
+            color: var(--muted);
+            font-size: 12px;
+        }
+
+        /* Toast */
         #toast-notification {
-            transition: transform 0.3s ease-out, opacity 0.3s ease-out;
-            transform: translateY(100%);
-            opacity: 0;
-        }
-        #toast-notification.show {
-            transform: translateY(0);
-            opacity: 1;
+            border-radius: 12px;
+            background: linear-gradient(90deg, rgba(10,20,30,0.95), rgba(6,12,18,0.95));
+            box-shadow: 0 12px 30px rgba(2,6,23,0.6);
+            color: var(--text);
         }
 
-        /* fade-in for full screen detail */
-        .fade-in { animation: fadeIn 220ms ease-in both; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(6px);} to { opacity: 1; transform: translateY(0); } }
+        /* Full-screen detail view styling */
+        #tournament-detail-screen .max-w-lg { background: linear-gradient(180deg, rgba(255,255,255,0.01), rgba(255,255,255,0.00)); border-radius: 12px; border:1px solid rgba(255,255,255,0.03); }
+        #detail-screen-title { font-family: "Poppins", sans-serif; font-weight:700; color: #fff; }
+        #detail-screen-meta { color: var(--muted); font-size: 13px; }
 
-        /* small badge */
-        .slot-badge { background: linear-gradient(90deg,#111827,#1f2937); border: 1px solid rgba(255,255,255,0.06); }
+        /* Modal backdrop (make overlay darker and blur slightly) */
+        .modal-backdrop {
+            background: linear-gradient(180deg, rgba(2,6,11,0.7), rgba(2,6,11,0.76));
+            backdrop-filter: blur(4px);
+        }
 
-        /* clickable card hover */
-        .tourney-card { cursor: pointer; }
-        .tourney-card:hover { box-shadow: 0 10px 20px rgba(0,0,0,0.5); transform: translateY(-2px); transition: all .15s ease; }
+        /* Join modals and my-slot popup are visually lifted */
+        #join-ign-modal .max-w-md, #join-slot-modal .max-w-md, #my-slot-popup .max-w-md {
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(2,6,23,0.7);
+            border: 1px solid rgba(255,255,255,0.03);
+        }
 
-        /* full-screen detail area */
-        #tournament-detail-screen { background: linear-gradient(180deg, rgba(17,24,39,0.98), rgba(17,24,39,0.99)); z-index:50; }
+        /* Loader (replace default spinner with a geometric 'scanner' + ring) */
+        .loader {
+            width: 56px;
+            height: 56px;
+            border-radius: 50%;
+            position: relative;
+            background: conic-gradient(from 0deg, rgba(0,169,255,0.16), rgba(0,169,255,0.9) 30%, rgba(255,255,255,0.04) 60%);
+            animation: loader-rotate 1.4s linear infinite;
+            display:flex;
+            align-items:center;
+            justify-content:center;
+        }
+        .loader::after {
+            content: "";
+            position: absolute;
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background: var(--bg);
+            box-shadow: inset 0 2px 8px rgba(255,255,255,0.02);
+        }
+        @keyframes loader-rotate {
+            to { transform: rotate(360deg); }
+        }
 
-        /* my-slot popup & join modals should be above detail screen */
-        #join-ign-modal, #join-slot-modal, #my-slot-popup { z-index:70; }
+        /* Micro interactions: fade-in for revealed views */
+        .app-view { opacity: 0; transform: translateY(6px); transition: opacity var(--transition), transform var(--transition); }
+        .app-view:not(.hidden) { opacity: 1; transform: translateY(0); }
 
-        /* allow programmatic selection on elements with allow-select */
-        .allow-select { user-select: text !important; -webkit-user-select: text !important; }
+        /* small fade-in animation used for smaller elements */
+        .fade-in { animation: fadeIn 240ms var(--transition) both; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity:1; transform: translateY(0);} }
 
-        /* progress glow placeholder used via classes added dynamically */
-        .progress-glow { box-shadow: 0 0 8px rgba(255,0,0,0.2); }
+        /* Lazy fade-in helper class (JS could add this when elements scroll into view) */
+        .lazy-fade { opacity: 0; transform: translateY(10px); transition: opacity 360ms ease, transform 360ms ease; }
+        .lazy-fade.visible { opacity: 1; transform: translateY(0); }
 
-        /* prevent purple prose */
+        /* small badges & dots */
+        #my-fights-dot { width: 10px; height: 10px; border-radius: 999px; box-shadow: 0 6px 18px rgba(0,0,0,0.7); border: 2px solid #0b1116; }
+
+        /* small utilities for emphasized text */
+        .golden { color: #f6c85f; font-weight:700; }
+
+        /* ensure anchor links and small interactive texts are accent colored */
+        a, .link-accent { color: var(--accent); text-decoration: none; transition: color var(--transition-fast); }
+        a:hover, .link-accent:hover { filter: brightness(1.05); text-decoration: underline; }
+
+        /* ensure disabled states remain readable */
+        .disabled, [disabled] { opacity: 0.8; cursor: not-allowed; }
+
+        /* smaller view adjustments for mobile */
+        @media (max-width: 640px){
+            h1 { font-size: 1.6rem; }
+            .tourney-card { border-radius: 10px; }
+        }
     </style>
 </head>
 <body class="bg-gray-900 text-gray-200 font-sans antialiased">
@@ -82,7 +281,7 @@
     <div id="app" class="relative min-h-screen w-full max-w-lg mx-auto bg-gray-900 overflow-hidden shadow-2xl">
 
         <div id="global-loader" class="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-50 hidden">
-            <div class="loader ease-linear rounded-full border-4 border-t-4 border-gray-200 h-12 w-12"></div>
+            <div class="loader"></div>
         </div>
 
         <div id="toast-notification" class="fixed bottom-20 left-1/2 -translate-x-1/2 w-11/12 max-w-md p-4 rounded-lg shadow-lg z-60">
@@ -92,7 +291,7 @@
         <section id="auth-section" class="min-h-screen flex flex-col items-center justify-center p-6">
             <div class="w-full">
                 <div class="text-center mb-12">
-                    <i class="fas fa-gamepad text-5xl text-indigo-400"></i>
+                    <i class="fas fa-gamepad text-5xl" style="color:var(--accent)"></i>
                     <h1 class="text-4xl font-bold text-white mt-4">Adept Play</h1>
                     <p class="text-gray-400">Join the Competition</p>
                 </div>
@@ -147,7 +346,7 @@
             <header id="app-header" class="fixed top-0 left-0 right-0 w-full max-w-lg mx-auto bg-gray-800 shadow-md z-40">
                 <div class="flex items-center justify-between h-16 px-4">
                     <div class="flex items-center">
-                        <i class="fas fa-gamepad text-2xl text-indigo-400"></i>
+                        <i class="fas fa-gamepad text-2xl" style="color:var(--accent)"></i>
                         <span class="text-xl font-bold text-white ml-2">Adept Play</span>
                     </div>
                     <div id="wallet-balance-header" class="bg-gray-700 rounded-full px-4 py-1.5">
@@ -190,7 +389,7 @@
                     </div>
                 </section>
 
-                <section id="wallet-section" class="app-view p-4 hidden">
+                 <section id="wallet-section" class="app-view p-4 hidden">
                     <h2 class="text-2xl font-bold text-white mb-4">My Wallet</h2>
                     <div class="bg-gray-800 p-6 rounded-lg text-center shadow-lg">
                         <p class="text-gray-400 text-sm">Current Balance</p>
@@ -201,7 +400,7 @@
                         <div class="bg-gray-800 p-4 rounded-lg">
                             <label class="block text-xs text-gray-400 mb-2">Deposit Amount (min ₹10)</label>
                             <input id="deposit-amount" type="number" min="10" step="1" placeholder="Enter amount (₹10+)" class="w-full bg-gray-700 p-3 rounded-lg text-white mb-3">
-                            <button id="add-money-btn" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-lg">
+                            <button id="add-money-btn" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-lg">
                                 Add Money
                             </button>
                         </div>
@@ -236,7 +435,7 @@
                             Update Profile
                         </button>
                     </form>
-                    
+
                     <h3 class="text-xl font-semibold text-white mt-8 mb-4">Security</h3>
                     <form id="password-change-form" class="bg-gray-800 p-6 rounded-lg space-y-4">
                         <div>
@@ -312,7 +511,7 @@
                         </div>
 
                         <input type="text" id="t-map" placeholder="Map (e.g., Erangel)" class="w-full bg-gray-700 p-3 rounded-lg">
-                          <textarea id="t-description" placeholder="Tournament description (rules/details) - visible to users" class="w-full bg-gray-700 p-3 rounded-lg text-gray-200 h-28"></textarea>
+                        <textarea id="t-description" placeholder="Tournament description (rules/details) - visible to users" class="w-full bg-gray-700 p-3 rounded-lg text-gray-200 h-28"></textarea>
 
                         <button type="submit" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-lg">
                             Create Tournament
