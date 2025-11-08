@@ -1,18 +1,20 @@
 <!DOCTYPE html>
 <html lang="en" class="dark">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>Adept Play</title>
-    
+
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
-    
+
     <script type="module">
-        // Firebase snippet (same as before)
+        // Import the functions you need from the SDKs you need
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
         import { getAuth } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
         import { getFirestore } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+        // Your web app's Firebase configuration (from firebase-config.js)
         const firebaseConfig = {
             apiKey: "AIzaSyCK0pS7HaT_Y7Z5Y97QM0LqAkNXEO8VEb0",
             authDomain: "tournamentv2-713ab.firebaseapp.com",
@@ -21,15 +23,33 @@
             messagingSenderId: "546759434595",
             appId: "1:546759434595:web:21218cfe145508a518b356"
         };
+
+        // Initialize Firebase
         const app = initializeApp(firebaseConfig);
     </script>
 
     <style>
-        .loader { border-top-color: #3498db; -webkit-animation: spin 1s linear infinite; animation: spin 1s linear infinite; }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        /* Simple loading spinner */
+        .loader {
+            border-top-color: #3498db;
+            -webkit-animation: spin 1s linear infinite;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
 
-        #toast-notification { transition: transform 0.3s ease-out, opacity 0.3s ease-out; transform: translateY(100%); opacity: 0; }
-        #toast-notification.show { transform: translateY(0); opacity: 1; }
+        /* Simple toast notification */
+        #toast-notification {
+            transition: transform 0.3s ease-out, opacity 0.3s ease-out;
+            transform: translateY(100%);
+            opacity: 0;
+        }
+        #toast-notification.show {
+            transform: translateY(0);
+            opacity: 1;
+        }
 
         /* fade-in for full screen detail */
         .fade-in { animation: fadeIn 220ms ease-in both; }
@@ -43,9 +63,18 @@
         .tourney-card:hover { box-shadow: 0 10px 20px rgba(0,0,0,0.5); transform: translateY(-2px); transition: all .15s ease; }
 
         /* full-screen detail area */
-        #tournament-detail-screen { background: linear-gradient(180deg, rgba(17,24,39,0.98), rgba(17,24,39,0.99)); }
-        /* my-slot popup */
-        #my-slot-popup { background: rgba(0,0,0,0.5); }
+        #tournament-detail-screen { background: linear-gradient(180deg, rgba(17,24,39,0.98), rgba(17,24,39,0.99)); z-index:50; }
+
+        /* my-slot popup & join modals should be above detail screen */
+        #join-ign-modal, #join-slot-modal, #my-slot-popup { z-index:70; }
+
+        /* allow programmatic selection on elements with allow-select */
+        .allow-select { user-select: text !important; -webkit-user-select: text !important; }
+
+        /* progress glow placeholder used via classes added dynamically */
+        .progress-glow { box-shadow: 0 0 8px rgba(255,0,0,0.2); }
+
+        /* prevent purple prose */
     </style>
 </head>
 <body class="bg-gray-900 text-gray-200 font-sans antialiased">
@@ -56,7 +85,7 @@
             <div class="loader ease-linear rounded-full border-4 border-t-4 border-gray-200 h-12 w-12"></div>
         </div>
 
-        <div id="toast-notification" class="fixed bottom-20 left-1/2 -translate-x-1/2 w-11/12 max-w-md p-4 rounded-lg shadow-lg z-50">
+        <div id="toast-notification" class="fixed bottom-20 left-1/2 -translate-x-1/2 w-11/12 max-w-md p-4 rounded-lg shadow-lg z-60">
             <p id="toast-message"></p>
         </div>
 
@@ -131,6 +160,7 @@
             </header>
 
             <main id="app-main" class="pt-16 pb-20">
+
                 <section id="home-section" class="app-view p-4">
                     <h2 class="text-2xl font-bold text-white mb-4">Upcoming Tournaments</h2>
                     <div id="tournaments-list" class="space-y-4">
@@ -166,14 +196,25 @@
                         <p class="text-gray-400 text-sm">Current Balance</p>
                         <p id="wallet-page-balance" class="text-4xl font-bold text-green-400 my-2">₹0.00</p>
                     </div>
-                    <div class="flex gap-4 my-6">
-                        <button id="add-money-btn" class="flex-1 bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-lg">
-                            <i class="fas fa-plus-circle mr-2"></i>Add ₹100
-                        </button>
-                        <button id="withdraw-money-btn" class="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-3 rounded-lg">
-                            <i class="fas fa-minus-circle mr-2"></i>Withdraw ₹50
-                        </button>
+
+                    <div class="grid grid-cols-2 gap-4 my-6">
+                        <div class="bg-gray-800 p-4 rounded-lg">
+                            <label class="block text-xs text-gray-400 mb-2">Deposit Amount (min ₹10)</label>
+                            <input id="deposit-amount" type="number" min="10" step="1" placeholder="Enter amount (₹10+)" class="w-full bg-gray-700 p-3 rounded-lg text-white mb-3">
+                            <button id="add-money-btn" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-lg">
+                                Add Money
+                            </button>
+                        </div>
+
+                        <div class="bg-gray-800 p-4 rounded-lg">
+                            <label class="block text-xs text-gray-400 mb-2">Withdraw Amount (min ₹30)</label>
+                            <input id="withdraw-amount" type="number" min="30" step="1" placeholder="Enter amount (₹30+)" class="w-full bg-gray-700 p-3 rounded-lg text-white mb-3">
+                            <button id="withdraw-money-btn" class="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 rounded-lg">
+                                Withdraw
+                            </button>
+                        </div>
                     </div>
+
                     <h3 class="text-xl font-semibold text-white mb-3">Transaction History</h3>
                     <div id="transaction-history" class="space-y-2">
                         <p class="text-gray-400">Loading transactions...</p>
@@ -237,7 +278,7 @@
                     </button>
                     <h3 class="text-xl font-semibold text-white mt-6 mb-3">All Tournaments</h3>
                     <div id="admin-tournaments-list" class="space-y-3">
-                        </div>
+                    </div>
                 </section>
 
                 <section id="tournament-section" class="app-view p-4 hidden">
@@ -271,18 +312,18 @@
                         </div>
 
                         <input type="text" id="t-map" placeholder="Map (e.g., Erangel)" class="w-full bg-gray-700 p-3 rounded-lg">
-                        <textarea id="t-description" placeholder="Tournament description (rules/details) - visible to users" class="w-full bg-gray-700 p-3 rounded-lg text-gray-200 h-28" ></textarea>
+                          <textarea id="t-description" placeholder="Tournament description (rules/details) - visible to users" class="w-full bg-gray-700 p-3 rounded-lg text-gray-200 h-28"></textarea>
 
                         <button type="submit" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-lg">
                             Create Tournament
                         </button>
                     </form>
                 </section>
-                
+
                 <section id="manage-tournament-section" class="app-view p-4 hidden">
                     <button class="text-indigo-400 mb-4" id="back-to-admin-dash-btn-2">&larr; Back to Dashboard</button>
                     <h2 id="manage-t-title" class="text-2xl font-bold text-white mb-4">Manage Tournament</h2>
-                    
+
                     <form id="update-room-form" class="bg-gray-800 p-6 rounded-lg space-y-4 mb-6">
                         <h3 class="text-lg font-semibold">Update Room Details</h3>
                         <input type="text" id="manage-t-room-id" placeholder="Room ID" class="w-full bg-gray-700 p-3 rounded-lg">
@@ -291,13 +332,13 @@
                             Update Room
                         </button>
                     </form>
-                    
-                     <form id="declare-winner-form" class="bg-gray-800 p-6 rounded-lg space-y-4">
+
+                    <form id="declare-winner-form" class="bg-gray-800 p-6 rounded-lg space-y-4">
+                        <!-- populated dynamically in admin-data.js -->
                     </form>
 
                     <h3 class="text-xl font-semibold text-white mt-6 mb-3">Participants</h3>
-                    <div id="manage-t-participants-list" class="space-y-2">
-                        </div>
+                    <div id="manage-t-participants-list" class="space-y-2"></div>
                 </section>
 
             </main>
@@ -328,12 +369,12 @@
         </div>
     </div>
 
-    <!-- JOIN MODAL: Step 1 (IGN input) -->
-    <div id="join-ign-modal" class="fixed inset-0 hidden z-50 flex items-center justify-center modal-backdrop">
+    <!-- JOIN MODAL: Step 1 (IGN input) z-index higher than detail screen -->
+    <div id="join-ign-modal" class="fixed inset-0 hidden z-70 flex items-center justify-center modal-backdrop">
         <div class="max-w-md w-11/12 bg-gray-800 rounded-lg p-6 shadow-lg">
             <h3 class="text-lg font-semibold text-white mb-2" id="join-ign-title">Join Tournament</h3>
             <p class="text-sm text-gray-400 mb-4" id="join-ign-sub">Enter your In-Game Name</p>
-            <input id="join-ign-input" type="text" placeholder="Your In-game Name" class="w-full bg-gray-700 p-3 rounded-lg text-white mb-4" />
+            <input id="join-ign-input" type="text" placeholder="Your In-game Name" class="w-full bg-gray-700 p-3 rounded-lg text-white mb-4 allow-select" />
             <div class="flex gap-3">
                 <button id="join-ign-next" class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-lg">Next</button>
                 <button id="join-ign-cancel" class="flex-1 bg-gray-600 hover:bg-gray-500 text-white font-bold py-3 rounded-lg">Cancel</button>
@@ -342,7 +383,7 @@
     </div>
 
     <!-- SLOT SELECT MODAL: Step 2 (choose slot) -->
-    <div id="join-slot-modal" class="fixed inset-0 hidden z-50 flex items-center justify-center modal-backdrop">
+    <div id="join-slot-modal" class="fixed inset-0 hidden z-70 flex items-center justify-center modal-backdrop">
         <div class="max-w-md w-11/12 bg-gray-800 rounded-lg p-4 shadow-lg">
             <h3 class="text-lg font-semibold text-white mb-2" id="join-slot-title">Choose Slot</h3>
             <p class="text-sm text-gray-400 mb-3" id="join-slot-sub">Pick an available slot / team position</p>
@@ -402,7 +443,7 @@
     </section>
 
     <!-- My Slot popup (inside detail screen) -->
-    <div id="my-slot-popup" class="hidden fixed inset-0 z-60 flex items-center justify-center">
+    <div id="my-slot-popup" class="hidden fixed inset-0 z-70 flex items-center justify-center">
         <div class="max-w-md w-11/12 bg-gray-800 rounded-lg p-4">
             <div class="flex items-center justify-between mb-3">
                 <h4 class="text-lg font-semibold text-white">My Slot & Teammates</h4>
@@ -415,8 +456,16 @@
     </div>
 
     <script>
+        // Block context menu and gestures but allow selection in inputs/textareas and .allow-select elements
         document.addEventListener('contextmenu', event => event.preventDefault());
-        document.onselectstart = function() { return false; }
+
+        document.addEventListener('selectstart', function (e) {
+            const tag = e.target.tagName;
+            if (tag !== 'INPUT' && tag !== 'TEXTAREA' && !e.target.classList.contains('allow-select')) {
+                e.preventDefault();
+            }
+        }, false);
+
         document.addEventListener('gesturestart', function (e) { e.preventDefault(); });
         let lastTouchEnd = 0;
         document.addEventListener('touchend', function (event) {
@@ -427,7 +476,7 @@
             lastTouchEnd = now;
         }, false);
     </script>
-    
+
     <script type="module" src="js/main.js"></script>
 </body>
 </html>
