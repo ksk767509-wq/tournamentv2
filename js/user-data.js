@@ -36,7 +36,7 @@ export function initUserListeners(userId) {
         if (docSnap.exists()) {
             const userData = docSnap.data();
             window.currentUser = { uid: userId, ...userData };
-            const balance = userData.walletBalance.toFixed(2);
+            const balance = (userData.walletBalance || 0).toFixed(2);
             document.getElementById('header-wallet-amount').textContent = `₹${balance}`;
             document.getElementById('wallet-page-balance').textContent = `₹${balance}`;
         }
@@ -44,12 +44,10 @@ export function initUserListeners(userId) {
 
     const tourneysRef = collection(db, "tournaments");
     const qTourneys = query(tourneysRef, orderBy("matchTime", "asc"));
-    // Listen to all tournaments (Upcoming/Live/Completed) for detail screen access
     const unsubTourneys = onSnapshot(qTourneys, (querySnapshot) => {
         const tournaments = [];
         querySnapshot.forEach(docSnap => tournaments.push({ id: docSnap.id, ...docSnap.data() }));
         latestTournaments = tournaments.filter(t => t.status === 'Upcoming' || t.status === 'Live' || t.status === 'Completed');
-        // render only upcoming for home
         const upcoming = latestTournaments.filter(t => t.status === 'Upcoming');
         renderHomeTournaments(upcoming, joinedTournamentIds);
         updateMyFightsDot();
@@ -79,7 +77,6 @@ export function initUserListeners(userId) {
         });
         latestJoinedTournaments = joined;
         renderMyTournaments(joined);
-        // update home tournaments with joined set
         const upcoming = latestTournaments.filter(t => t.status === 'Upcoming');
         renderHomeTournaments(upcoming, joinedTournamentIds);
         updateMyFightsDot();
@@ -125,7 +122,7 @@ export function initUserUI(userData) {
 /* Delegated event handler for page - join, copy, ok, tourney-card click, detail-screen controls */
 function attachDelegatedHandlers() {
     document.body.addEventListener('click', async (e) => {
-        // Join button clicked
+        // Join button clicked (outside cards)
         const joinButton = e.target.closest('.join-btn');
         if (joinButton && !joinButton.disabled) {
             const tId = joinButton.dataset.id;
@@ -141,12 +138,25 @@ function attachDelegatedHandlers() {
         if (copyBtn) {
             const toCopy = copyBtn.dataset.copy || '';
             if (toCopy) {
+                // Primary: navigator.clipboard
                 navigator.clipboard.writeText(toCopy).then(()=> showToast('Copied to clipboard.')).catch(()=> {
+                    // Fallback: create textarea with allow-select so global select blocker won't block programmatic selection
                     try {
-                        const ta = document.createElement('textarea'); ta.value = toCopy; ta.style.position='fixed'; ta.style.left='-9999px';
-                        document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
+                        const ta = document.createElement('textarea');
+                        ta.value = toCopy;
+                        ta.classList.add('allow-select');
+                        ta.style.position = 'fixed';
+                        ta.style.left = '-9999px';
+                        ta.style.top = '0';
+                        document.body.appendChild(ta);
+                        ta.select();
+                        document.execCommand('copy');
+                        document.body.removeChild(ta);
                         showToast('Copied to clipboard.');
-                    } catch (err) { console.error('Copy fail', err); showToast('Could not copy.', true); }
+                    } catch (err) {
+                        console.error('Copy fail', err);
+                        showToast('Could not copy.', true);
+                    }
                 });
             } else showToast('Nothing to copy.', true);
             return;
@@ -223,13 +233,12 @@ function attachDelegatedHandlers() {
             renderMySlotPopup(null, []);
             return;
         }
-        // compute teammates based on mode and slot
         const tournamentMode = screen.dataset.mode || 'solo';
         const slotNum = myPart.slot ? parseInt(myPart.slot, 10) : null;
         let teammates = [];
         if (slotNum) {
             if (tournamentMode === 'solo') {
-                teammates = []; // no teammates
+                teammates = [];
             } else {
                 const teamSize = tournamentMode === 'duo' ? 2 : 4;
                 const teamNo = Math.ceil(slotNum / teamSize);
@@ -251,16 +260,11 @@ function attachDelegatedHandlers() {
     document.getElementById('detail-join-btn').addEventListener('click', () => {
         const screen = document.getElementById('tournament-detail-screen');
         const tid = screen.dataset.tid;
-        const perKill = screen.dataset.perKill === '1';
-        const mode = screen.dataset.mode || 'solo';
-        // find tournament entryFee from latestTournaments
         const tournament = latestTournaments.find(t => t.id === tid) || null;
         const fee = tournament ? (tournament.entryFee || 0) : 0;
         const max = tournament ? (tournament.maxParticipants || 0) : 0;
-        openJoinIGNModal({ tournamentId: tid, entryFee: fee, mode, max });
+        openJoinIGNModal({ tournamentId: tid, entryFee: fee, mode: tournament ? (tournament.mode || 'solo') : 'solo', max });
     });
-
-    // copy button & ok buttons are handled earlier in delegated handler above
 }
 
 /* ---------------- Modal helpers for Join (unchanged) ---------------- */
@@ -286,7 +290,7 @@ async function openJoinSlotModal(payload) {
         const pColl = collection(db, "participants");
         const pSnap = await getDocs(query(pColl, where("tournamentId", "==", payload.tournamentId)));
         const takenSlots = new Set();
-        pSnap.forEach(snap => { const data = snap.data(); if (data.slot) takenSlots.add(data.slot); });
+        pSnap.forEach(snap => { const data = snap.data(); if (data.slot) takenSlots.add(String(data.slot)); });
 
         const max = parseInt(payload.max || 0, 10) || 0;
         container.innerHTML = '';
@@ -294,7 +298,7 @@ async function openJoinSlotModal(payload) {
 
         if (mode === 'solo') {
             for (let i = 1; i <= max; i++) {
-                const isTaken = takenSlots.has(i);
+                const isTaken = takenSlots.has(String(i));
                 const el = document.createElement('label');
                 el.className = `flex items-center justify-between p-3 rounded ${isTaken ? 'opacity-60' : 'hover:bg-gray-600 cursor-pointer'}`;
                 el.innerHTML = `<div class="text-sm">Slot #${i}</div><input type="radio" name="slot-select" value="${i}" ${isTaken ? 'disabled' : ''} />`;
@@ -315,7 +319,7 @@ async function openJoinSlotModal(payload) {
                 slotsWrap.className = 'grid grid-cols-2 gap-2';
                 for (let s=1; s<=teamSize; s++) {
                     const slotIndex = (t-1)*teamSize + s;
-                    const isTaken = takenSlots.has(slotIndex);
+                    const isTaken = takenSlots.has(String(slotIndex));
                     const el = document.createElement('label');
                     el.className = `flex items-center justify-between p-2 rounded ${isTaken ? 'opacity-60' : 'hover:bg-gray-600 cursor-pointer'}`;
                     el.innerHTML = `<div class="text-sm">#${slotIndex}</div><input type="radio" name="slot-select" value="${slotIndex}" ${isTaken ? 'disabled' : ''} />`;
@@ -425,7 +429,7 @@ async function handleJoinTournament(tournamentId, entryFee, options = {}) {
                 seenByUser: false
             });
 
-             const txRef = doc(collection(db, "transactions"));
+            const txRef = doc(collection(db, "transactions"));
             transaction.set(txRef, {
                 userId,
                 amount: entryFee,
@@ -444,11 +448,22 @@ async function handleJoinTournament(tournamentId, entryFee, options = {}) {
     } finally { hideLoader(); }
 }
 
-/* Wallet / profile / tabs (unchanged) */
+/* Wallet / profile / tabs (updated deposit/withdraw handlers) */
 function initWalletButtons() {
-    document.getElementById('add-money-btn').addEventListener('click', () => handleSimulatedTransaction(100, 'credit', 'Simulated deposit'));
-    document.getElementById('withdraw-money-btn').addEventListener('click', () => handleSimulatedTransaction(50, 'debit', 'Simulated withdrawal'));
+    document.getElementById('add-money-btn').addEventListener('click', async () => {
+        const val = parseFloat(document.getElementById('deposit-amount').value || '0');
+        if (isNaN(val) || val < 10) { showToast('Minimum deposit is ₹10', true); return; }
+        await handleSimulatedTransaction(val, 'credit', 'User deposit');
+    });
+
+    document.getElementById('withdraw-money-btn').addEventListener('click', async () => {
+        const val = parseFloat(document.getElementById('withdraw-amount').value || '0');
+        if (isNaN(val) || val < 30) { showToast('Minimum withdrawal is ₹30', true); return; }
+        if (window.currentUser && window.currentUser.walletBalance < val) { showToast('Insufficient funds.', true); return; }
+        await handleSimulatedTransaction(val, 'debit', 'User withdrawal');
+    });
 }
+
 async function handleSimulatedTransaction(amount, type, description) {
     const user = auth.currentUser;
     if (!user) return;
@@ -519,7 +534,6 @@ function updateMyFightsDot() {
 async function openTournamentDetailScreen(tournamentId) {
     showLoader();
     try {
-        // find tournament locally first
         let tournament = latestTournaments.find(t => t.id === tournamentId) || null;
         if (!tournament) {
             const tRef = doc(db, "tournaments", tournamentId);
@@ -528,21 +542,43 @@ async function openTournamentDetailScreen(tournamentId) {
         }
         if (!tournament) { showToast('Tournament not found.', true); hideLoader(); return; }
 
-        // fetch participants
         const pColl = collection(db, "participants");
         const pSnap = await getDocs(query(pColl, where("tournamentId", "==", tournamentId)));
         const participants = [];
         pSnap.forEach(s => participants.push({ id: s.id, ...s.data() }));
 
-        // determine if current user is admin
         const userIsAdmin = window.currentUser && window.currentUser.isAdmin;
-
-        // find current user's participant object if exists
         const currentUserId = auth.currentUser ? auth.currentUser.uid : null;
         const currentUserParticipant = participants.find(p => p.userId === currentUserId) || null;
 
-        // show via UI helper
+        // update currentManagingTournament? Not needed here; just show screen
         showTournamentDetailScreen(tournament, participants, userIsAdmin, currentUserParticipant);
+
+        // Now set the join button state (mirror outside button)
+        const detailJoinBtn = document.getElementById('detail-join-btn');
+        if (detailJoinBtn) {
+            // If user already joined -> show Joined (disabled)
+            if (currentUserParticipant) {
+                detailJoinBtn.textContent = 'Joined';
+                detailJoinBtn.classList.remove('bg-green-600');
+                detailJoinBtn.classList.add('bg-yellow-400','text-black');
+                detailJoinBtn.disabled = true;
+            } else {
+                const current = tournament.currentParticipants || 0;
+                const max = tournament.maxParticipants || 0;
+                if (current >= max) {
+                    detailJoinBtn.textContent = 'Full';
+                    detailJoinBtn.classList.remove('bg-green-600');
+                    detailJoinBtn.classList.add('bg-red-600');
+                    detailJoinBtn.disabled = true;
+                } else {
+                    detailJoinBtn.textContent = 'Join Now';
+                    detailJoinBtn.classList.remove('bg-red-600','bg-yellow-400','text-black');
+                    detailJoinBtn.classList.add('bg-green-600');
+                    detailJoinBtn.disabled = false;
+                }
+            }
+        }
 
     } catch (err) {
         console.error('Open detail error', err);
