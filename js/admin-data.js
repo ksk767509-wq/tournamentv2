@@ -19,7 +19,9 @@ import { navigateTo } from "./router.js";
 let adminListeners = [];
 let currentManagingTournament = {
     id: null,
-    prizePool: 0
+    prizePool: 0,
+    perKillEnabled: false,
+    perKillPrize: 0
 };
 
 /**
@@ -31,7 +33,6 @@ export function initAdminListeners() {
     clearAdminListeners();
     
     // 1. Admin Dashboard Stats Listener
-    // We'll use multiple snapshots for real-time stats
     const usersRef = collection(db, "users");
     const tourneysRef = collection(db, "tournaments");
     
@@ -49,11 +50,10 @@ export function initAdminListeners() {
             tournaments.push({ id: doc.id, ...t });
             
             if (t.status === 'Completed') {
-                prize += t.prizePool;
+                prize += t.prizePool || 0;
             }
-            // Calculate revenue from all tournaments (assuming fee is collected on join)
-            const commission = (t.commissionRate / 100) || 0.2; // Default 20%
-            const totalEntry = t.prizePool / (1 - commission); // Back-calculate total entry
+            const commission = (t.commissionRate / 100) || 0.2;
+            const totalEntry = t.prizePool / (1 - commission) || 0;
             revenue += totalEntry * commission;
         });
 
@@ -61,8 +61,11 @@ export function initAdminListeners() {
         document.getElementById('admin-stats-prize').textContent = `₹${prize.toFixed(2)}`;
         document.getElementById('admin-stats-revenue').textContent = `₹${revenue.toFixed(2)}`;
         
-        // Render tournament list on dashboard
-        tournaments.sort((a, b) => b.createdAt - a.createdAt);
+        tournaments.sort((a, b) => {
+            const ta = a.createdAt ? (a.createdAt.seconds || 0) : 0;
+            const tb = b.createdAt ? (b.createdAt.seconds || 0) : 0;
+            return tb - ta;
+        });
         renderAdminTournaments(tournaments);
     });
     
@@ -79,14 +82,13 @@ export function clearAdminListeners() {
     adminListeners.forEach(unsub => unsub());
     adminListeners = [];
     
-    // Also clear specific tournament listeners if any
     if (currentManagingTournament.unsub) {
         currentManagingTournament.unsub();
     }
     if (currentManagingTournament.unsubParts) {
         currentManagingTournament.unsubParts();
     }
-    currentManagingTournament = { id: null, prizePool: 0 };
+    currentManagingTournament = { id: null, prizePool: 0, perKillEnabled: false, perKillPrize: 0 };
 }
 
 /**
@@ -96,6 +98,18 @@ function initAdminUI() {
     // Create Tournament Form
     document.getElementById('create-tournament-form').addEventListener('submit', handleCreateTournament);
     
+    // Show/hide per-kill prize input when toggle changes
+    const perKillToggle = document.getElementById('t-per-kill-toggle');
+    if (perKillToggle) {
+        perKillToggle.addEventListener('change', (e) => {
+            const wrapper = document.getElementById('per-kill-prize-wrapper');
+            if (wrapper) {
+                if (e.target.checked) wrapper.classList.remove('hidden');
+                else wrapper.classList.add('hidden');
+            }
+        });
+    }
+
     // Manage Tournament button listener (delegated)
     document.getElementById('admin-tournaments-list').addEventListener('click', (e) => {
         const manageBtn = e.target.closest('.manage-t-btn');
@@ -163,6 +177,9 @@ async function handleCreateTournament(e) {
         await addDoc(collection(db, "tournaments"), formData);
         showToast("Tournament created successfully!", false);
         e.target.reset();
+        // hide per-kill wrapper on reset
+        const wrapper = document.getElementById('per-kill-prize-wrapper');
+        if (wrapper) wrapper.classList.add('hidden');
         navigateTo('admin-dashboard-section');
     } catch (error) {
         console.error("Create tournament error:", error);
@@ -180,38 +197,84 @@ function loadManageTournamentView(tournamentId) {
     currentManagingTournament.id = tournamentId;
     navigateTo('manage-tournament-section');
     
-    // Clear old listeners if any
     if (currentManagingTournament.unsub) currentManagingTournament.unsub();
     if (currentManagingTournament.unsubParts) currentManagingTournament.unsubParts();
 
-    // Listen to tournament details
     const tDocRef = doc(db, "tournaments", tournamentId);
     currentManagingTournament.unsub = onSnapshot(tDocRef, (docSnap) => {
         if (docSnap.exists()) {
             const t = docSnap.data();
-            currentManagingTournament.prizePool = t.prizePool; // Store prize for winner logic
+            currentManagingTournament.prizePool = t.prizePool || 0;
+            currentManagingTournament.perKillEnabled = !!t.perKillEnabled;
+            currentManagingTournament.perKillPrize = t.perKillPrize || 0;
+
             document.getElementById('manage-t-title').textContent = `Manage: ${t.title}`;
             document.getElementById('manage-t-room-id').value = t.roomId || '';
             document.getElementById('manage-t-room-pass').value = t.roomPassword || '';
             
-            // Disable winner form if already completed
             if (t.status === 'Completed') {
                 document.getElementById('declare-winner-form').classList.add('opacity-50', 'pointer-events-none');
             } else {
                 document.getElementById('declare-winner-form').classList.remove('opacity-50', 'pointer-events-none');
             }
+
+            // If per-kill is enabled, render per-kill UI inside declare-winner-form
+            const declareForm = document.getElementById('declare-winner-form');
+            declareForm.innerHTML = '';
+            if (currentManagingTournament.perKillEnabled) {
+                // create inputs for each participant (will be filled when participants listener runs)
+                declareForm.innerHTML = `<h3 class="text-lg font-semibold">Per-Kill Distribution</h3><div id="per-kill-entries" class="space-y-2"></div><button id="per-kill-distribute" class="w-full bg-green-600 disabled:opacity-60 disabled:cursor-not-allowed text-white font-bold py-3 rounded mt-3" disabled>Distribute Prize</button>`;
+                // participants fill below when participants listener triggers
+            } else {
+                declareForm.innerHTML = `<h3 class="text-lg font-semibold">Declare Winner</h3><label class="block text-sm text-gray-300 mb-2">Select Winner</label><select id="participant-winner-select" class="w-full bg-gray-700 p-3 rounded-lg"><option value="">Loading participants...</option></select><button type="submit" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded mt-3">Declare Winner & Distribute Prize</button>`;
+            }
         }
     });
 
-    // Listen to participants
     const pCollRef = collection(db, "participants");
     const q = query(pCollRef, where("tournamentId", "==", tournamentId));
-    currentManagingTournament.unsubParts = onSnapshot(q, (querySnapshot) => {
+    currentManagingTournament.unsubParts = onSnapshot(q, async (querySnapshot) => {
         const participants = [];
-        querySnapshot.forEach(doc => {
-            participants.push({ id: doc.id, ...doc.data() });
-        });
+        querySnapshot.forEach(doc => participants.push({ id: doc.id, ...doc.data() }));
         renderManageParticipants(participants);
+
+        // If per-kill UI present, render inputs and enable distribute button only when all entered
+        const perKillEntries = document.getElementById('per-kill-entries');
+        if (perKillEntries) {
+            perKillEntries.innerHTML = '';
+            participants.forEach(p => {
+                const row = document.createElement('div');
+                row.className = 'flex items-center gap-3';
+                row.innerHTML = `<div class="flex-1 text-sm text-white">${p.username} <span class="text-xs text-gray-400">(${p.userId})</span></div>
+                                 <input data-participant-id="${p.id}" class="kill-input bg-gray-700 p-2 rounded w-24 text-white" type="number" min="0" placeholder="Kills" />`;
+                perKillEntries.appendChild(row);
+            });
+
+            const distributeBtn = document.getElementById('per-kill-distribute');
+            const checkEnable = () => {
+                const inputs = document.querySelectorAll('.kill-input');
+                if (!inputs || inputs.length === 0) { distributeBtn.disabled = true; return; }
+                let allValid = true;
+                inputs.forEach(inp => {
+                    const v = inp.value;
+                    if (v === '' || v === null || v === undefined || isNaN(Number(v)) || Number(v) < 0) allValid = false;
+                });
+                distributeBtn.disabled = !allValid;
+            };
+
+            perKillEntries.querySelectorAll('.kill-input').forEach(i => {
+                i.addEventListener('input', checkEnable);
+            });
+
+            distributeBtn.addEventListener('click', async (ev) => {
+                ev.preventDefault();
+                // reuse handleDeclareWinner flow by programmatically submitting the form
+                // construct synthetic event
+                const fakeEvent = { preventDefault: () => {} };
+                handleDeclareWinner(fakeEvent);
+            });
+        }
+
     });
 }
 
@@ -232,7 +295,7 @@ async function handleUpdateRoomDetails(e) {
         await updateDoc(tDocRef, {
             roomId: roomId,
             roomPassword: roomPassword,
-            status: 'Live' // Automatically set to Live when room details are added
+            status: 'Live'
         });
         showToast("Room details updated. Tournament is now LIVE.", false);
     } catch (error) {
@@ -249,12 +312,10 @@ async function handleUpdateRoomDetails(e) {
  */
 async function handleDeclareWinner(e) {
     e.preventDefault();
-    const select = document.getElementById('participant-winner-select');
-    // Determine if per-kill UI is present
+
+    // If per-kill UI present, handle per-kill distribution (allow even when not full)
     const killInputs = document.querySelectorAll('.kill-input');
     if (killInputs && killInputs.length > 0) {
-        // per-kill flow (handled earlier versions) - this file retains that logic
-        // Now support distribution even if tournament not full
         const killsMap = {};
         for (const inp of killInputs) {
             const pid = inp.dataset.participantId;
@@ -320,6 +381,8 @@ async function handleDeclareWinner(e) {
         return;
     }
 
+    // non per-kill winner flow (unchanged)
+    const select = document.getElementById('participant-winner-select');
     if (!select) { showToast("Winner select not found.", true); return; }
     const winnerUserId = select.value;
     if (!winnerUserId) { showToast("Please select a winner.", true); return; }
